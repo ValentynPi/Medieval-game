@@ -15,7 +15,8 @@ export type BuildingType =
   | "tower"
   | "wall"
   | "blacksmith"
-  | "market";
+  | "market"
+  | "buildersHall";
 
 export type TroopType = "infantry" | "archers" | "cavalry";
 
@@ -39,7 +40,8 @@ export type VillagerJob =
   | "farmer"
   | "quarryman"
   | "miner"
-  | "trader";
+  | "trader"
+  | "builder";
 
 export interface Villager {
   id: string;
@@ -50,12 +52,32 @@ export interface Villager {
   y: number;
   tx: number;
   ty: number;
-  phase: "walk" | "work";
+  phase: "walk" | "work" | "build";
   workTimer: number;
   anim: number;
   /** Last assigned workplace cell */
   workGx: number | null;
   workGy: number | null;
+  /** Waypoints from pathfinding (cell centers) */
+  path: { x: number; y: number }[];
+  pathI: number;
+  /** Personal walk pace multiplier */
+  pace: number;
+  /** Brief idle pause while walking (seconds) */
+  pause: number;
+  /** Construction site this builder is raising */
+  siteId: string | null;
+}
+
+export interface ConstructionSite {
+  id: string;
+  type: BuildingType;
+  x: number;
+  y: number;
+  rotation: number;
+  /** 0–1 */
+  progress: number;
+  builderId: string | null;
 }
 
 export type Resources = Record<ResourceId, number>;
@@ -209,6 +231,7 @@ export interface GameState {
   selectedVillagerId: string | null;
   /** Next map click sets workplace for selected villager */
   assignWorkplace: boolean;
+  constructionSites: ConstructionSite[];
   tutorialStep: number;
   victory: boolean;
   defeat: boolean;

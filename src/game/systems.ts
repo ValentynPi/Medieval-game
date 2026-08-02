@@ -1,4 +1,4 @@
-import { BATTLE_H, BATTLE_W, BUILDINGS, FOOD_UPKEEP, GRID_H, GRID_W, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
+import { BATTLE_H, BATTLE_W, BUILDINGS, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
 import {
   buildingAt,
   countType,
@@ -41,11 +41,12 @@ import {
   variantUnlockedAt,
 } from "./combat";
 import { biomeAt, buildBlockedReason, cellBiome, getWorldLayout, isBuildableCell, isWaterBiome } from "./worldGen";
-import { tickVillagers } from "./villagers";
+import { registerFinishSite, tickVillagers } from "./villagers";
 import type {
   BattleState,
   BattleUnit,
   BuildingType,
+  ConstructionSite,
   FieldCell,
   FormationType,
   GameState,
@@ -171,30 +172,19 @@ export function tickEconomy(state: GameState, dt: number): void {
   state.day += dt / 100;
 }
 
-export function placeBuilding(
+function canPlaceAt(
   state: GameState,
   type: BuildingType,
   x: number,
   y: number,
-  rotation = state.buildRotation,
 ): boolean {
   if (!PLACEABLE.includes(type)) return false;
-  const existing = buildingAt(state, x, y);
-  // Dig a mine into a player-raised mountain plot
-  if (type === "mine" && existing?.type === "mountain") {
-    const def = BUILDINGS[type];
-    const cost = scaleCost(def.baseCost, 1, def.costGrowth);
-    if (!canAfford(state.resources, cost)) {
-      flash(state, "Not enough resources.");
-      return false;
-    }
-    state.resources = pay(state.resources, cost);
-    existing.type = "mine";
-    existing.level = 1;
-    existing.rotation = ((rotation % 4) + 4) % 4;
-    flash(state, "Gold Mine dug into the mountain.");
-    return true;
+  if (state.constructionSites.some((s) => s.x === x && s.y === y)) {
+    flash(state, "Builders are already raising something on that plot.");
+    return false;
   }
+  const existing = buildingAt(state, x, y);
+  if (type === "mine" && existing?.type === "mountain") return true;
   if (existing) {
     flash(state, "That plot is already claimed.");
     return false;
@@ -232,8 +222,7 @@ export function placeBuilding(
     return false;
   }
   const def = BUILDINGS[type];
-  const kl = keepLevel(state);
-  if (kl < def.keepRequired) {
+  if (keepLevel(state) < def.keepRequired) {
     flash(state, `${def.name} needs Keep level ${def.keepRequired}.`);
     return false;
   }
@@ -241,13 +230,29 @@ export function placeBuilding(
     flash(state, "Two Barracks is the limit for this realm.");
     return false;
   }
-  const cost = scaleCost(def.baseCost, 1, def.costGrowth);
-  if (!canAfford(state.resources, cost)) {
-    flash(state, "Not enough resources.");
+  if (type === "buildersHall" && countType(state, "buildersHall") >= 1) {
+    flash(state, "One Builders Hall is enough — upgrade it for a larger crew.");
     return false;
   }
-  state.resources = pay(state.resources, cost);
+  return true;
+}
+
+function completeBuilding(
+  state: GameState,
+  type: BuildingType,
+  x: number,
+  y: number,
+  rotation: number,
+): void {
   const rot = ((rotation % 4) + 4) % 4;
+  const existing = buildingAt(state, x, y);
+  if (type === "mine" && existing?.type === "mountain") {
+    existing.type = "mine";
+    existing.level = 1;
+    existing.rotation = rot;
+    flash(state, "Builders finished the Gold Mine.");
+    return;
+  }
   const building = {
     id: uid("bld"),
     type,
@@ -259,9 +264,9 @@ export function placeBuilding(
   };
   state.buildings.push(building);
   if (type === "farm") {
-    flash(state, `Farm raised with ${building.fields?.length ?? 0} field plots.`);
+    flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.`);
   } else if (type === "bridge") {
-    flash(state, "Bridge spans the water — troops can cross on foot.");
+    flash(state, "Bridge spans the water — townsfolk can cross on foot.");
   } else if (type === "boat") {
     flash(state, "Boat docked — move troops onto it to sail the river.");
   } else if (type === "road") {
@@ -270,12 +275,77 @@ export function placeBuilding(
     flash(state, "Forest planted.");
   } else if (type === "mountain") {
     flash(state, "Mountain raised — dig a Gold Mine here.");
+  } else if (type === "buildersHall") {
+    flash(state, "Builders Hall ready — hire a crew on the right.");
   } else {
-    flash(state, `${def.name} raised.`);
+    flash(state, `${BUILDINGS[type].name} finished by the crew.`);
   }
   if (state.tutorialStep === 0 && (type === "farm" || type === "lumber")) {
     state.tutorialStep = 1;
   }
+}
+
+export function finishConstructionSite(state: GameState, site: ConstructionSite): void {
+  const idx = state.constructionSites.findIndex((s) => s.id === site.id);
+  if (idx >= 0) state.constructionSites.splice(idx, 1);
+  for (const v of state.villagers) {
+    if (v.siteId === site.id) {
+      v.siteId = null;
+      v.phase = "walk";
+    }
+  }
+  completeBuilding(state, site.type, site.x, site.y, site.rotation);
+}
+
+registerFinishSite(finishConstructionSite);
+
+export function placeBuilding(
+  state: GameState,
+  type: BuildingType,
+  x: number,
+  y: number,
+  rotation = state.buildRotation,
+): boolean {
+  if (!canPlaceAt(state, type, x, y)) return false;
+  const def = BUILDINGS[type];
+  const cost = scaleCost(def.baseCost, 1, def.costGrowth);
+  if (!canAfford(state.resources, cost)) {
+    flash(state, "Not enough resources.");
+    return false;
+  }
+
+  const needsCrew = !INSTANT_BUILD.includes(type);
+  if (needsCrew) {
+    const hasHall = state.buildings.some((b) => b.type === "buildersHall");
+    const hasBuilders = state.villagers.some((v) => v.job === "builder");
+    if (!hasHall) {
+      flash(state, "Build a Builders Hall first, then hire builders to raise this.", 5);
+      return false;
+    }
+    if (!hasBuilders) {
+      flash(state, "Hire builders at the Hall — they will walk out and raise this.", 5);
+      return false;
+    }
+  }
+
+  state.resources = pay(state.resources, cost);
+  const rot = ((rotation % 4) + 4) % 4;
+
+  if (!needsCrew) {
+    completeBuilding(state, type, x, y, rot);
+    return true;
+  }
+
+  state.constructionSites.push({
+    id: uid("site"),
+    type,
+    x,
+    y,
+    rotation: rot,
+    progress: 0,
+    builderId: null,
+  });
+  flash(state, `${def.name} foundation laid — a builder is on the way.`, 4);
   return true;
 }
 

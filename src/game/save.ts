@@ -26,6 +26,7 @@ export interface SavePayload {
   victory: boolean;
   defeat: boolean;
   villagers?: GameState["villagers"];
+  constructionSites?: GameState["constructionSites"];
 }
 
 export function hasSave(): boolean {
@@ -64,7 +65,11 @@ export function saveGame(state: GameState): boolean {
       tutorialStep: state.tutorialStep,
       victory: state.victory,
       defeat: state.defeat,
-      villagers: state.villagers.map((v) => ({ ...v })),
+      villagers: state.villagers.map((v) => ({
+        ...v,
+        path: v.path.map((p) => ({ ...p })),
+      })),
+      constructionSites: state.constructionSites.map((s) => ({ ...s })),
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     return true;
@@ -122,6 +127,19 @@ export function loadGame(): GameState | null {
         ty: v.ty + oy,
         workGx: v.workGx != null ? v.workGx + ox : null,
         workGy: v.workGy != null ? v.workGy + oy : null,
+        path: (v.path ?? []).map((p) => ({ x: p.x + ox, y: p.y + oy })),
+        pathI: v.pathI ?? 0,
+        pace: v.pace ?? 1,
+        pause: v.pause ?? 0,
+        siteId: v.siteId ?? null,
+        phase: v.phase === "build" ? "walk" : v.phase,
+      })),
+      constructionSites: (data.constructionSites ?? []).map((s) => ({
+        ...s,
+        x: s.x + ox,
+        y: s.y + oy,
+        builderId: null,
+        progress: s.progress ?? 0,
       })),
       selectedVillagerId: null,
       assignWorkplace: false,

@@ -1,9 +1,9 @@
 import "./style.css";
-import { BUILDINGS, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
+import { BUILDINGS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene3d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
-import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedCity, selectedSite, totalTroops } from "./game/state";
+import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedBuildersHall, selectedCity, selectedSite, totalTroops } from "./game/state";
 import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/save";
 import {
   finishBattleReturn,
@@ -40,6 +40,9 @@ import {
 import {
   JOB_HINTS,
   JOB_LABELS,
+  builderCap,
+  builderCount,
+  hireBuilder,
   selectedVillager,
   setVillagerJob,
   setVillagerWorkplace,
@@ -91,8 +94,8 @@ app.innerHTML = `
       <ul>
         <li>Place farms &amp; camps, upgrade the Keep</li>
         <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
-        <li>Click townsfolk to assign work — chop wood, farm, quarry, mine, trade</li>
-        <li>Clear 8 camps in order · Win with Keep level 4</li>
+        <li>Builders Hall → hire builders → they walk out and raise farms &amp; halls</li>
+        <li>Townsfolk path around rivers (need bridges) · Win: Keep 4 + clear camps</li>
       </ul>
       <button class="primary" id="start-btn">Take the throne</button>
       <button id="continue-btn" class="hidden">Continue saved realm</button>
@@ -171,7 +174,7 @@ document.querySelector("#start-btn")!.addEventListener("click", () => {
   bootFresh();
   intro.classList.add("hidden");
   state.mode = "village";
-  flash(state, "Build farms, then click townsfolk to send them chopping, farming, or mining.");
+  flash(state, "Place a Builders Hall, hire a crew, then order farms — builders will walk there and raise them.");
   persist();
   hudDirty = true;
 });
@@ -317,6 +320,8 @@ canvas.addEventListener("click", (e) => {
     const picked = state.buildings.find((b) => b.id === pickedId);
     if (picked?.type === "barracks") {
       flash(state, "Training camp open — drill recruits on the right.", 3);
+    } else if (picked?.type === "buildersHall") {
+      flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
     }
     renderHud();
     return;
@@ -332,6 +337,8 @@ canvas.addEventListener("click", (e) => {
     village.setGhost(null, null);
     if (existing.type === "barracks") {
       flash(state, "Training camp open — drill recruits on the right.", 3);
+    } else if (existing.type === "buildersHall") {
+      flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
     }
     renderHud();
     return;
@@ -649,7 +656,7 @@ function renderHud(): void {
   } else {
     leftPanel.innerHTML = `
     <h2>Build</h2>
-    <p>Roads · forests · mountains · mines on peaks · bridges or boats to cross rivers.</p>
+    <p>Builders Hall first for farms &amp; halls. Bridges let people cross rivers. Roads · forests · mountains instant.</p>
     <div class="build-grid" id="build-grid"></div>
     <h2>Selected</h2>
     <div id="selected-box"></div>
@@ -819,8 +826,49 @@ function renderHud(): void {
       `;
     }
   } else {
+  const hall = selectedBuildersHall(state);
   const villager = selectedVillager(state);
-  if (villager) {
+  if (hall) {
+    const crew = builderCount(state);
+    const cap = builderCap(state);
+    const sites = state.constructionSites.length;
+    rightPanel.innerHTML = `
+      <h2>Builders Hall</h2>
+      <p class="hint">Lv ${hall.level} · Hire a crew, then place buildings — they walk the land and raise them.</p>
+      <div class="stat-row"><span>Builders</span><span>${crew} / ${cap}</span></div>
+      <div class="stat-row"><span>Sites building</span><span>${sites}</span></div>
+      <p class="hint">Hire cost: ${HIRE_BUILDER_COST.food} food · ${HIRE_BUILDER_COST.gold} gold</p>
+      <button class="primary" id="hire-builder-btn">Hire builder</button>
+      <button id="upgrade-hall-btn">Upgrade Hall</button>
+      <p class="hint">Rivers block footpaths until you place a Bridge.</p>
+    `;
+    rightPanel.querySelector("#hire-builder-btn")?.addEventListener("click", () => {
+      if (hireBuilder(state)) persist();
+      hudDirty = true;
+      renderHud();
+    });
+    rightPanel.querySelector("#upgrade-hall-btn")?.addEventListener("click", () => {
+      if (upgradeBuilding(state, hall.id)) persist();
+      hudDirty = true;
+      renderHud();
+    });
+  } else if (villager) {
+    if (villager.job === "builder") {
+      const site = state.constructionSites.find((s) => s.id === villager.siteId);
+      rightPanel.innerHTML = `
+        <h2>${villager.name}</h2>
+        <p class="hint">Hired builder · ${
+          villager.phase === "build" ? "Raising a building…" : site ? "Walking to the site…" : "Waiting for work at the Hall"
+        }</p>
+        ${site ? `<div class="stat-row"><span>${BUILDINGS[site.type].name}</span><span>${Math.floor(site.progress * 100)}%</span></div>` : ""}
+        <p class="hint">${JOB_HINTS.builder}</p>
+        <button id="clear-vil-btn">Deselect</button>
+      `;
+      rightPanel.querySelector("#clear-vil-btn")?.addEventListener("click", () => {
+        state.selectedVillagerId = null;
+        renderHud();
+      });
+    } else {
     const jobs: VillagerJob[] = [
       "woodcutter",
       "farmer",
@@ -831,7 +879,9 @@ function renderHud(): void {
     ];
     rightPanel.innerHTML = `
       <h2>${villager.name}</h2>
-      <p class="hint">${villager.phase === "work" ? "Working…" : "Walking…"} · ${JOB_LABELS[villager.job]}</p>
+      <p class="hint">${
+        villager.phase === "work" ? "Working…" : "Walking…"
+      } · ${JOB_LABELS[villager.job]}</p>
       <p class="hint">${JOB_HINTS[villager.job]}</p>
       <div class="stat-row"><span>Yield</span><span>${villagerJobYieldLabel(villager.job)}</span></div>
       <h2>Assign work</h2>
@@ -840,7 +890,7 @@ function renderHud(): void {
         state.assignWorkplace ? "Click the map for their workplace…" : "Send to a place…"
       }</button>
       <button id="clear-vil-btn">Deselect</button>
-      <p class="hint">Townsfolk walk the village and haul resources when they finish a task.</p>
+      <p class="hint">They path around rivers — only Bridges let them cross water.</p>
     `;
     const grid = rightPanel.querySelector("#job-grid")!;
     for (const job of jobs) {
@@ -872,6 +922,7 @@ function renderHud(): void {
       state.assignWorkplace = false;
       renderHud();
     });
+    }
   } else {
   const camp = selectedBarracks(state);
   const repair = repairKeepCost(state);

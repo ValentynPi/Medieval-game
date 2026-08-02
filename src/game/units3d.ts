@@ -230,6 +230,7 @@ function villagerCloth(job: VillagerJob): string {
   if (job === "quarryman") return "#6a6e78";
   if (job === "miner") return "#4a4a52";
   if (job === "trader") return "#6a4a7a";
+  if (job === "builder") return "#8a6a28";
   return "#5a6a7a";
 }
 
@@ -301,7 +302,12 @@ export function updateVillagerMesh(
     mesh.userData.lastX = v.x;
     mesh.userData.lastZ = v.y;
   }
-  const bob = v.phase === "work" ? Math.sin(v.anim) * 0.04 : Math.abs(Math.sin(v.anim)) * 0.06;
+  const bob =
+    v.phase === "build"
+      ? Math.abs(Math.sin(v.anim * 1.4)) * 0.08
+      : v.phase === "work"
+        ? Math.sin(v.anim) * 0.04
+        : Math.abs(Math.sin(v.anim)) * 0.06;
   mesh.position.set(gx, bob, gz);
   const ring = mesh.getObjectByName("vil_ring");
   if (ring) ring.visible = selected;

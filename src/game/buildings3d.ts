@@ -358,6 +358,23 @@ export function createBuildingMesh(type: BuildingType, level: number): THREE.Gro
       }
       break;
     }
+    case "buildersHall": {
+      g.add(box(1.55 * grow, 0.85 * grow, 1.35 * grow, "#6a5340"));
+      g.add(roof(1.75 * grow, 0.7 * grow, 1.55 * grow, "#8a6a28", 1.35 * grow));
+      g.add(windowGlow(0.35 * grow, 0.55 * grow, 0.68 * grow));
+      addLogPile(g, -0.7 * grow, 0.55 * grow, 2 + Math.min(2, level));
+      const beam = box(1.4 * grow, 0.1, 0.12, "#4a3428", 1.05 * grow);
+      g.add(beam);
+      for (const sx of [-0.55, 0.55]) {
+        const scaffold = box(0.1, 1.1 + level * 0.1, 0.1, "#5a4030", 0.55);
+        scaffold.position.set(sx * grow, 0, 0.75 * grow);
+        g.add(scaffold);
+      }
+      const yard = box(1.2 * grow, 0.08, 0.7 * grow, "#7a6a50", 0.04);
+      yard.position.z = 0.85 * grow;
+      g.add(yard);
+      break;
+    }
     case "bridge": {
       const deck = box(1.9, 0.12, 1.1, "#7a6248", 0.35);
       g.add(deck);
@@ -456,6 +473,39 @@ export function createBuildingMesh(type: BuildingType, level: number): THREE.Gro
   }
 
   g.scale.setScalar(scale);
+  return g;
+}
+
+/** Scaffold / foundation mesh for buildings under construction */
+export function createConstructionMesh(type: BuildingType, progress: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "construction_site";
+  const ghost = createBuildingMesh(type, 1);
+  ghost.traverse((o) => {
+    if (o instanceof THREE.Mesh && o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if ("opacity" in m) {
+          m.transparent = true;
+          m.opacity = 0.28 + progress * 0.55;
+          m.depthWrite = false;
+        }
+      }
+    }
+  });
+  g.add(ghost);
+  for (const [x, z] of [
+    [-0.7, -0.7],
+    [0.7, -0.7],
+    [-0.7, 0.7],
+    [0.7, 0.7],
+  ] as const) {
+    const pole = box(0.1, 1.2 + progress * 0.4, 0.1, "#5a4030", 0.6);
+    pole.position.set(x, 0, z);
+    g.add(pole);
+  }
+  const plank = box(1.5, 0.08, 0.35, "#8a6a40", 0.08 + progress * 0.5);
+  g.add(plank);
   return g;
 }
 

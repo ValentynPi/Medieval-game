@@ -243,6 +243,7 @@ export function createInitialState(): GameState {
     villagers: [],
     selectedVillagerId: null,
     assignWorkplace: false,
+    constructionSites: [],
     tutorialStep: 0,
     victory: false,
     defeat: false,
@@ -267,6 +268,12 @@ export function selectedBarracks(state: GameState): Building | undefined {
   if (!state.selectedBuildingId) return undefined;
   const b = state.buildings.find((x) => x.id === state.selectedBuildingId);
   return b?.type === "barracks" ? b : undefined;
+}
+
+export function selectedBuildersHall(state: GameState): Building | undefined {
+  if (!state.selectedBuildingId) return undefined;
+  const b = state.buildings.find((x) => x.id === state.selectedBuildingId);
+  return b?.type === "buildersHall" ? b : undefined;
 }
 
 export function buildingAt(state: GameState, x: number, y: number): Building | undefined {

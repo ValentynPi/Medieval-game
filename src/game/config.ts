@@ -202,7 +202,30 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     roof: "#2f5d4a",
     keepRequired: 2,
   },
+  buildersHall: {
+    type: "buildersHall",
+    name: "Builders Hall",
+    description: "Hire builders who walk out and raise other buildings for you.",
+    maxLevel: 4,
+    baseCost: { wood: 70, stone: 50, food: 30, gold: 35 },
+    costGrowth: 1.5,
+    color: "#6a5340",
+    roof: "#8a6a28",
+    keepRequired: 1,
+  },
 };
+
+/** Buildings that appear instantly (paths, water works, terrain). Others need builders. */
+export const INSTANT_BUILD: BuildingType[] = [
+  "road",
+  "forest",
+  "mountain",
+  "bridge",
+  "boat",
+  "buildersHall",
+];
+
+export const HIRE_BUILDER_COST: Resources = { wood: 0, stone: 0, food: 28, gold: 22 };
 
 export const TRAIN_COST: Record<TroopType, Resources> = {
   infantry: { wood: 5, stone: 0, food: 12, gold: 8 },
@@ -230,6 +253,7 @@ export const PLACEABLE: BuildingType[] = [
   "forest",
   "mountain",
   "barracks",
+  "buildersHall",
   "tower",
   "wall",
   "blacksmith",

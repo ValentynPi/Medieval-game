@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { buildingYaw, CELL, GRID_H, GRID_W, TILE } from "./config";
 import { buildMusterField, musterCamp, musterSignature } from "./armyField";
-import { createBuildingMesh, createRock } from "./buildings3d";
+import { createBuildingMesh, createConstructionMesh, createRock } from "./buildings3d";
 import { isEnemyVisible } from "./combat";
 import { buildForestChunks, updateForestVisibility, type TreeChunk } from "./forests";
 import { createUnitMesh, createVillagerMesh, updateUnitMesh, updateVillagerMesh } from "./units3d";
@@ -25,12 +25,14 @@ export class VillageScene {
   private readonly orderMarkerGroup = new THREE.Group();
   private readonly musterFieldGroup = new THREE.Group();
   private readonly villagersGroup = new THREE.Group();
+  private readonly sitesGroup = new THREE.Group();
   private readonly groundPlane: THREE.Mesh;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly buildingMeshes = new Map<string, THREE.Group>();
   private readonly battleMeshes = new Map<string, THREE.Group>();
   private readonly villagerMeshes = new Map<string, THREE.Group>();
+  private readonly siteMeshes = new Map<string, THREE.Group>();
   private readonly floatLabels = new Map<string, CSS2DObject>();
   private readonly hemi: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
@@ -132,6 +134,7 @@ export class VillageScene {
     this.root.add(this.orderMarkerGroup);
     this.root.add(this.musterFieldGroup);
     this.root.add(this.villagersGroup);
+    this.root.add(this.sitesGroup);
     this.root.add(this.fieldGroup);
 
     this.groundPlane = this.buildTerrain();
@@ -798,14 +801,57 @@ export class VillageScene {
       if (css) {
         const el = css.element as HTMLDivElement;
         const selected = state.selectedVillagerId === v.id;
-        el.className = `vil-label${selected ? " selected" : ""}${v.phase === "work" ? " working" : ""}`;
+        const busy = v.phase === "work" || v.phase === "build";
+        el.className = `vil-label${selected ? " selected" : ""}${busy ? " working" : ""}`;
         el.textContent = selected
           ? `${v.name} · ${JOB_LABELS[v.job]}`
-          : v.phase === "work"
-            ? JOB_LABELS[v.job]
+          : busy
+            ? v.phase === "build"
+              ? "Building…"
+              : JOB_LABELS[v.job]
             : "";
-        el.style.display = selected || v.phase === "work" ? "block" : "none";
+        el.style.display = selected || busy ? "block" : "none";
       }
+    }
+  }
+
+  syncConstructionSites(state: GameState): void {
+    const show = state.mode === "village";
+    this.sitesGroup.visible = show;
+    if (!show) return;
+    const alive = new Set(state.constructionSites.map((s) => s.id));
+    for (const [id, mesh] of this.siteMeshes) {
+      if (!alive.has(id)) {
+        this.sitesGroup.remove(mesh);
+        this.disposeObject(mesh);
+        this.siteMeshes.delete(id);
+      }
+    }
+    for (const s of state.constructionSites) {
+      let mesh = this.siteMeshes.get(s.id);
+      const key = `${s.type}:${s.x},${s.y}`;
+      if (!mesh || mesh.userData.siteKey !== key) {
+        if (mesh) {
+          this.sitesGroup.remove(mesh);
+          this.disposeObject(mesh);
+        }
+        mesh = createConstructionMesh(s.type, s.progress);
+        mesh.userData.siteId = s.id;
+        mesh.userData.siteKey = key;
+        this.siteMeshes.set(s.id, mesh);
+        this.sitesGroup.add(mesh);
+        mesh.position.set(s.x * TILE + TILE / 2, 0, s.y * TILE + TILE / 2);
+        mesh.rotation.y = buildingYaw(s.rotation);
+      }
+      mesh.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if ("opacity" in m && m.transparent) {
+            m.opacity = 0.28 + s.progress * 0.55;
+          }
+        }
+      });
     }
   }
 
@@ -1004,6 +1050,7 @@ export class VillageScene {
     }
     this.syncBuildings(state);
     this.syncMusterField(state);
+    this.syncConstructionSites(state);
     this.syncVillagers(state);
     this.syncBattle(state);
     this.animateDecor(dt);
