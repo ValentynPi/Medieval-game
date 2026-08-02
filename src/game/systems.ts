@@ -28,6 +28,7 @@ import {
   canEnterWaterCell,
   isFlanked,
   isWaterAt,
+  nearestDryBattlePos,
   moraleCombatMult,
   refreshFogOfWar,
   terrainAtBattle,
@@ -40,7 +41,7 @@ import {
   troopVariantForLevel,
   variantUnlockedAt,
 } from "./combat";
-import { biomeAt, buildBlockedReason, cellBiome, getWorldLayout, isBuildableCell, isWaterBiome } from "./worldGen";
+import { biomeAt, buildBlockedReason, cellBiome, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, tickVillagers } from "./villagers";
 import type {
   BattleState,
@@ -687,36 +688,30 @@ export function startRaid(state: GameState): void {
   const keepY = gridToBattleY(keep.y);
   const scale = 1 + wave * 0.1 + keepLevel(state) * 0.05;
 
-  // Water spawn points for river boat assaults
-  const layout = getWorldLayout();
-  const riverSpawns = layout.waterCells
-    .filter((c) => {
-      const bx = gridToBattleX(c.gx);
-      const by = gridToBattleY(c.gy);
-      const d = Math.hypot(bx - keepX, by - keepY);
-      return d > 280 && d < 720;
-    })
-    .slice(0, 80);
-  const boatRaid = riverSpawns.length > 8 && (wave % 2 === 0 || wave >= 3);
-  const boatCount = boatRaid ? Math.ceil(enemyCount * 0.45) : 0;
-
   for (let i = 0; i < enemyCount; i++) {
-    const byBoat = i < boatCount;
-    let x: number;
-    let y: number;
-    if (byBoat) {
-      const cell = riverSpawns[i % riverSpawns.length];
-      x = gridToBattleX(cell.gx) + (Math.random() - 0.5) * 30;
-      y = gridToBattleY(cell.gy) + (Math.random() - 0.5) * 30;
-    } else {
-      const angle = (i / enemyCount) * Math.PI * 2 + Math.random() * 0.4;
-      const dist = 320 + Math.random() * 180;
-      x = keepX + Math.cos(angle) * dist;
-      y = keepY + Math.sin(angle) * dist;
-      // Keep land spawns off water
-      if (isWaterAt(x, y, state)) {
-        x = keepX + Math.cos(angle) * (dist + 80);
-        y = keepY + Math.sin(angle) * (dist + 80);
+    const angle = (i / enemyCount) * Math.PI * 2 + Math.random() * 0.4;
+    let dist = 320 + Math.random() * 180;
+    let x = keepX + Math.cos(angle) * dist;
+    let y = keepY + Math.sin(angle) * dist;
+    // Always spawn on dry land — never in the river
+    for (let attempt = 0; attempt < 12 && isWaterAt(x, y, state); attempt++) {
+      dist += 60;
+      x = keepX + Math.cos(angle + attempt * 0.35) * dist;
+      y = keepY + Math.sin(angle + attempt * 0.35) * dist;
+    }
+    if (isWaterAt(x, y, state)) {
+      const dry = nearestDryBattlePos(state, keepX, keepY);
+      if (dry) {
+        const a2 = angle + Math.PI;
+        x = dry.x + Math.cos(a2) * 200;
+        y = dry.y + Math.sin(a2) * 200;
+      }
+    }
+    if (isWaterAt(x, y, state)) {
+      const dry = nearestDryBattlePos(state, x, y);
+      if (dry) {
+        x = dry.x;
+        y = dry.y;
       }
     }
     x = Math.max(40, Math.min(BATTLE_W - 40, x));
@@ -724,7 +719,7 @@ export function startRaid(state: GameState): void {
     const roll = Math.random();
     const troop: TroopType = roll < 0.45 ? "infantry" : roll < 0.75 ? "archers" : "cavalry";
     const s = TROOP_STATS[troop];
-    const isBeast = !byBoat && wave >= 3 && i % 8 === 0;
+    const isBeast = wave >= 3 && i % 8 === 0;
     units.push({
       id: uid("u"),
       side: "enemy",
@@ -737,14 +732,14 @@ export function startRaid(state: GameState): void {
       maxHp: s.hp * scale * (isBeast ? 1.6 : 1),
       atk: s.atk * scale,
       range: s.range,
-      speed: s.speed * (byBoat ? 0.7 : 0.85),
+      speed: s.speed * 0.85,
       radius: 12,
       cooldown: Math.random() * 0.5,
       morale: 85,
       fatigue: 0,
       facing: Math.atan2(keepY - y, keepX - x),
       order: "auto",
-      embarked: byBoat,
+      embarked: false,
     });
   }
 
@@ -752,9 +747,8 @@ export function startRaid(state: GameState): void {
     units,
     elapsed: 0,
     outcome: "ongoing",
-    waveLabel: boatRaid
-      ? `Raid ${wave} — River boats landing`
-      : wave >= 4
+    waveLabel:
+      wave >= 4
         ? `Raid ${wave} — Beasts among them`
         : wave >= 2
           ? `Raid ${wave} — Heavier band`
@@ -775,9 +769,7 @@ export function startRaid(state: GameState): void {
   state.paused = false;
   flash(
     state,
-    boatRaid
-      ? "River assault! Raiders sail in — they leave boats on shore. Cross water only by Bridge or Boat."
-      : "Formations: L line · V wedge · B block · C circle · Q hero skill · Drag to select",
+    "Formations: L line · V wedge · B block · C circle · Q hero skill · Drag to select. Stay off open river!",
   );
 }
 
@@ -976,35 +968,17 @@ function tryBoardOrBlockWater(
   nextY: number,
 ): boolean {
   const next = battleToGrid(nextX, nextY);
-  const cur = battleToGrid(u.x, u.y);
   const nextWet = isWaterAt(nextX, nextY, state);
-  const curWet = isWaterAt(u.x, u.y, state);
 
   if (!nextWet) {
-    if (u.embarked && curWet) {
-      u.embarked = false;
-      if (u.side === "enemy") {
-        // Landing party leaves the boat
-      }
-    }
+    u.embarked = false;
     return true;
   }
 
-  // Entering / staying on water
+  // Deep water only on bridge or boat dock — never open river
   if (canEnterWaterCell(state, next.gx, next.gy, u)) {
-    if (hasBoatAt(state, next.gx, next.gy) || hasBoatAt(state, cur.gx, cur.gy)) {
-      u.embarked = true;
-    } else if (hasBridgeAt(state, next.gx, next.gy)) {
-      // foot bridge — no embark
-    } else if (u.embarked) {
-      // already sailing
-    }
-    return true;
-  }
-
-  // Can board from a dock on the current tile, then step into open water
-  if (hasBoatAt(state, cur.gx, cur.gy)) {
-    u.embarked = true;
+    if (hasBoatAt(state, next.gx, next.gy)) u.embarked = true;
+    else if (hasBridgeAt(state, next.gx, next.gy)) u.embarked = false;
     return true;
   }
 
@@ -1058,17 +1032,42 @@ export function tickBattle(state: GameState, dt: number): void {
   refreshFogOfWar(state);
   tickCombatFloats(battle, dt);
 
-  // Open water without bridge/boat/embarked → drown
+  // Nobody stands in open river — eject to shore, or sink enemies that can't
   for (const u of units) {
     if (u.hp <= 0 || u.kind === "keep" || u.kind === "tower" || u.speed <= 0) continue;
-    if (!isWaterAt(u.x, u.y, state)) continue;
+    if (!isWaterAt(u.x, u.y, state)) {
+      if (u.embarked && !hasBoatAt(state, battleToGrid(u.x, u.y).gx, battleToGrid(u.x, u.y).gy)) {
+        u.embarked = false;
+      }
+      continue;
+    }
     const cell = battleToGrid(u.x, u.y);
     if (canEnterWaterCell(state, cell.gx, cell.gy, u)) continue;
+    const dry = nearestDryBattlePos(state, u.x, u.y);
+    if (dry && u.side === "player") {
+      u.x = dry.x;
+      u.y = dry.y;
+      u.embarked = false;
+      addCombatFloat(battle, u.x, u.y, "To shore!", "#6a9ec8");
+      continue;
+    }
+    // Enemies (or no dry land) — drown so the raid can end
     u.hp = 0;
+    u.embarked = false;
     u.routing = true;
     addCombatFloat(battle, u.x, u.y, "Drowned!", "#6a9ec8");
     if (u.side === "player" && u.troopType) {
       battle.casualties[u.troopType] = (battle.casualties[u.troopType] ?? 0) + 1;
+    }
+  }
+
+  // Fleeing enemies who leave the field are gone — stop endless "ghost" raids
+  for (const u of units) {
+    if (u.side !== "enemy" || u.hp <= 0) continue;
+    const atEdge = u.x < 36 || u.y < 36 || u.x > BATTLE_W - 36 || u.y > BATTLE_H - 36;
+    if (atEdge && (u.routing || (u.morale ?? 100) < 35 || u.order === "move")) {
+      u.hp = 0;
+      u.routing = true;
     }
   }
 
@@ -1185,9 +1184,12 @@ export function tickBattle(state: GameState, dt: number): void {
     }
   }
 
-  const enemiesLeft = units.some((u) => u.side === "enemy" && u.hp > 0);
-  if (!enemiesLeft) {
+  const enemiesLeft = units.some(
+    (u) => u.side === "enemy" && u.hp > 0 && u.kind !== "keep" && u.kind !== "tower",
+  );
+  if (!enemiesLeft && battle.outcome === "ongoing") {
     battle.outcome = "won";
+    battle.selectedIds = [];
     applyRaidCasualties(state, battle);
     const reward = {
       wood: 50 + state.raidCount * 22,
@@ -1204,8 +1206,8 @@ export function tickBattle(state: GameState, dt: number): void {
     const c = battle.casualties;
     flash(
       state,
-      `Raid broken! +${reward.gold}g · Losses: ${c.infantry}i ${c.archers}a ${c.cavalry}c`,
-      5,
+      `Raid broken! +${reward.gold}g · Losses: ${c.infantry}i ${c.archers}a ${c.cavalry}c · Return to Village`,
+      6,
     );
     if (state.tutorialStep === 2) state.tutorialStep = 3;
     checkVictory(state);

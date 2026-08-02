@@ -22,19 +22,46 @@ export function isWaterAt(x: number, y: number, state?: GameState): boolean {
   return cellBiome(gx, gy, state?.buildings) === "water";
 }
 
-/** Riverbanks are always OK; deep water needs bridge, boat dock, or already sailing */
+/** Riverbanks OK. Deep water only with a Bridge or Boat dock — no free swimming. */
 export function canEnterWaterCell(
   state: GameState,
   gx: number,
   gy: number,
-  unit: BattleUnit,
+  _unit: BattleUnit,
 ): boolean {
   const biome = cellBiome(gx, gy, state.buildings);
   if (biome !== "water") return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
-  if (unit.embarked) return true;
   return false;
+}
+
+/** Nearest dry / bridge / boat cell in battle pixels */
+export function nearestDryBattlePos(
+  state: GameState,
+  x: number,
+  y: number,
+): { x: number; y: number } | null {
+  const start = battleToGrid(x, y);
+  for (let r = 0; r <= 24; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (r > 0 && Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const gx = start.gx + dx;
+        const gy = start.gy + dy;
+        if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) continue;
+        const biome = cellBiome(gx, gy, state.buildings);
+        if (biome === "water" && !hasBridgeAt(state, gx, gy) && !hasBoatAt(state, gx, gy)) {
+          continue;
+        }
+        return {
+          x: gx * CELL + CELL / 2,
+          y: gy * CELL + CELL / 2,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export function terrainAtBattle(x: number, y: number, state?: GameState): TerrainMods {
