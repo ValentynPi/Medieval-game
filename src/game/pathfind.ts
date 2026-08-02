@@ -1,5 +1,5 @@
 import { GRID_H, GRID_W } from "./config";
-import { cellBiome, isWaterBiome } from "./worldGen";
+import { cellBiome } from "./worldGen";
 import type { GameState } from "./types";
 
 /** Safe to stand on water: Bridge underfoot or a docked Boat. */
