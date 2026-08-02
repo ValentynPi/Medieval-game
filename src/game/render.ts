@@ -400,12 +400,15 @@ export function worldSiteFromPointer(
   const scaleY = canvas.height / rect.height;
   const px = (clientX - rect.left) * scaleX;
   const py = (clientY - rect.top) * scaleY;
+  let best: { site: (typeof state.sites)[0]; d: number } | null = null;
   for (const site of state.sites) {
+    if (site.cleared) continue;
     const x = site.x * W;
     const y = site.y * H;
-    if (Math.hypot(px - x, py - y) < 18) return site;
+    const d = Math.hypot(px - x, py - y);
+    if (d < 20 && (!best || d < best.d)) best = { site, d };
   }
-  return null;
+  return best?.site ?? null;
 }
 
 export function worldCityFromPointer(
@@ -419,10 +422,12 @@ export function worldCityFromPointer(
   const scaleY = canvas.height / rect.height;
   const px = (clientX - rect.left) * scaleX;
   const py = (clientY - rect.top) * scaleY;
+  let best: { city: (typeof state.cities)[0]; d: number } | null = null;
   for (const city of state.cities) {
     const x = city.x * W;
     const y = city.y * H;
-    if (Math.hypot(px - x, py - y) < 22) return city;
+    const d = Math.hypot(px - x, py - y);
+    if (d < 22 && (!best || d < best.d)) best = { city, d };
   }
-  return null;
+  return best?.city ?? null;
 }

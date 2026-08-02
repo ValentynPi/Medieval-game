@@ -129,8 +129,8 @@ function makeCities(): TradeCity[] {
       id: "city_easthollow",
       name: "Easthollow",
       kind: "trade",
-      x: 0.16,
-      y: 0.28,
+      x: 0.24,
+      y: 0.4,
       stock: { wood: 120, stone: 60, food: 160, gold: 0 },
       buyPrice: { wood: 3, stone: 4, food: 2, gold: 1 },
       sellPrice: { wood: 2, stone: 2, food: 1, gold: 1 },
@@ -218,7 +218,7 @@ export function createInitialState(): GameState {
       level: 1,
       xp: 0,
       skill: "Ironwall",
-      skillDesc: "Infantry deal +25% damage while Aldric leads. Q: Rally shield wall.",
+      skillDesc: "Passive: infantry +25% damage. Q Ironwall: temporary damage reduction for nearby allies.",
       buffTroop: "infantry",
       buffAmount: 0.25,
       skillCooldown: 0,
@@ -239,6 +239,7 @@ export function createInitialState(): GameState {
     sites: makeSites(),
     cities: makeCities(),
     selectedCityId: null,
+    selectedSiteId: null,
     tutorialStep: 0,
     victory: false,
     defeat: false,
@@ -289,6 +290,11 @@ export function hasBoatAt(state: GameState, x: number, y: number): boolean {
 export function selectedCity(state: GameState): TradeCity | undefined {
   if (!state.selectedCityId) return undefined;
   return state.cities.find((c) => c.id === state.selectedCityId);
+}
+
+export function selectedSite(state: GameState): WorldSite | undefined {
+  if (!state.selectedSiteId) return undefined;
+  return state.sites.find((s) => s.id === state.selectedSiteId);
 }
 
 export function countType(state: GameState, type: Building["type"]): number {

@@ -178,6 +178,8 @@ export interface GameState {
   sites: WorldSite[];
   cities: TradeCity[];
   selectedCityId: string | null;
+  /** World-map camp staged for confirm-march */
+  selectedSiteId: string | null;
   tutorialStep: number;
   victory: boolean;
   defeat: boolean;

@@ -865,16 +865,15 @@ export class VillageScene {
       updateUnitMesh(mesh, u);
       const spotted =
         u.side === "player" || !state.battle || isEnemyVisible(state.battle, u.id);
-      mesh.visible = true;
+      mesh.visible = spotted;
+      if (!spotted) continue;
       mesh.traverse((o) => {
         if (o instanceof THREE.Mesh && o.material) {
           const mats = Array.isArray(o.material) ? o.material : [o.material];
           for (const m of mats) {
             if (!("opacity" in m)) continue;
             m.transparent = true;
-            if (!spotted) {
-              m.opacity = 0.35;
-            } else if (u.routing) {
+            if (u.routing) {
               m.opacity = 0.65;
             } else if (u.morale != null && u.morale < 30) {
               m.opacity = 0.82;

@@ -126,7 +126,7 @@ function claimFarmFields(
   return fields;
 }
 
-function upkeepPerSecond(state: GameState): number {
+export function upkeepPerSecond(state: GameState): number {
   let cost = 0;
   for (const t of ["infantry", "archers", "cavalry"] as TroopType[]) {
     cost += state.troops[t] * FOOD_UPKEEP[t];
@@ -154,9 +154,11 @@ export function tickEconomy(state: GameState, dt: number): void {
         const pick = types[Math.floor(Math.random() * types.length)];
         state.troops[pick] -= 1;
         state.garrison[pick] = Math.min(state.garrison[pick], state.troops[pick]);
-        flash(state, "Starvation — a levy deserts.", 3);
+        flash(state, "Starvation — a levy deserts. Raise farms or cut the muster.", 3);
       }
     }
+  } else if (prod.food < upkeep && state.resources.food < 40 && state.messageTimer <= 0) {
+    flash(state, "Food running thin — upkeep exceeds production.", 3);
   }
 
   state.timeToRaid -= dt;
@@ -292,7 +294,8 @@ export function tradeBuy(
   const marketLv = state.buildings
     .filter((b) => b.type === "market")
     .reduce((m, b) => Math.max(m, b.level), 0);
-  const price = Math.ceil((city.buyPrice[resource] * take) / (1 + marketLv * 0.05));
+  const portMult = city.hasPort ? 0.92 : 1;
+  const price = Math.ceil((city.buyPrice[resource] * take * portMult) / (1 + marketLv * 0.05));
   if (state.resources.gold < price) {
     flash(state, "Not enough gold to buy.");
     return false;
@@ -321,12 +324,30 @@ export function tradeSell(
   const marketLv = state.buildings
     .filter((b) => b.type === "market")
     .reduce((m, b) => Math.max(m, b.level), 0);
-  const gain = Math.floor(city.sellPrice[resource] * give * (1 + marketLv * 0.05));
+  const portMult = city.hasPort ? 1.08 : 1;
+  const gain = Math.floor(city.sellPrice[resource] * give * (1 + marketLv * 0.05) * portMult);
   state.resources[resource] -= give;
   state.resources.gold += gain;
   city.stock[resource] += give;
   flash(state, `Sold ${give} ${resource} to ${city.name} for ${gain}g.`);
   return true;
+}
+
+/** Display unit prices after market + port modifiers */
+export function tradeUnitPrices(
+  state: GameState,
+  city: { hasPort?: boolean; buyPrice: Resources; sellPrice: Resources },
+  resource: ResourceId,
+): { buy: number; sell: number } {
+  const marketLv = state.buildings
+    .filter((b) => b.type === "market")
+    .reduce((m, b) => Math.max(m, b.level), 0);
+  const buyPort = city.hasPort ? 0.92 : 1;
+  const sellPort = city.hasPort ? 1.08 : 1;
+  return {
+    buy: Math.ceil((city.buyPrice[resource] * buyPort) / (1 + marketLv * 0.05)),
+    sell: Math.floor(city.sellPrice[resource] * (1 + marketLv * 0.05) * sellPort),
+  };
 }
 
 export function rotateBuildPreview(state: GameState): void {
@@ -343,6 +364,9 @@ export function rotateBuilding(state: GameState, id: string): boolean {
     return false;
   }
   b.rotation = (b.rotation + 1) % 4;
+  if (b.type === "farm") {
+    b.fields = claimFarmFields(state, b.x, b.y, b.rotation, b.level, b.id);
+  }
   flash(state, `${BUILDINGS[b.type].name} turned — ${b.rotation * 90}°`, 2);
   return true;
 }
@@ -441,7 +465,7 @@ export function setGarrison(state: GameState, type: TroopType, value: number): v
   state.garrison[type] = Math.max(0, Math.min(max, value));
 }
 
-function armyPower(troops: TroopCounts, heroBonus = 0): number {
+export function armyPower(troops: TroopCounts, heroBonus = 0): number {
   return troops.infantry * 10 + troops.archers * 11 + troops.cavalry * 13 + heroBonus;
 }
 
@@ -1124,24 +1148,21 @@ function levelHero(state: GameState): void {
   }
 }
 
-export function resolveExpedition(state: GameState, site: WorldSite): void {
-  if (site.cleared) {
-    flash(state, "This land is already yours.");
-    return;
-  }
-  if (!siteUnlocked(state, site)) {
-    const prev = state.sites.find((s) => !s.cleared && state.sites.indexOf(s) < state.sites.indexOf(site));
-    flash(state, `Clear ${prev?.name ?? "earlier camps"} first.`, 4);
-    return;
-  }
+export type ExpeditionPreview = {
+  fieldTotal: number;
+  power: number;
+  sitePower: number;
+  effective: number;
+  unlocked: boolean;
+  canMarch: boolean;
+  likelyWin: boolean;
+  lossPct: number;
+  composition: TroopCounts;
+};
 
+export function previewExpedition(state: GameState, site: WorldSite): ExpeditionPreview {
   const army = fieldArmy(state);
   const fieldTotal = totalTroops(army);
-  if (fieldTotal < 4) {
-    flash(state, "Leave garrison behind — need at least 4 field troops to march.", 4);
-    return;
-  }
-
   const heroBonus = state.hero.level * 8;
   const power = armyPower(army, heroBonus) * smithBonus(state);
   let edge = 1;
@@ -1156,18 +1177,53 @@ export function resolveExpedition(state: GameState, site: WorldSite): void {
       theirs.archers * army.infantry +
       theirs.cavalry * army.archers) *
     0.01;
-
   const effective = power * edge;
-  const losses = Math.min(0.5, Math.max(0.08, site.power / Math.max(25, effective)));
+  const unlocked = siteUnlocked(state, site);
+  const canMarch = !site.cleared && unlocked && fieldTotal >= 4;
+  const likelyWin = effective >= site.power * 0.88;
+  const lossPct = Math.min(0.5, Math.max(0.08, site.power / Math.max(25, effective)));
+  return {
+    fieldTotal,
+    power: Math.round(power),
+    sitePower: site.power,
+    effective: Math.round(effective),
+    unlocked,
+    canMarch,
+    likelyWin,
+    lossPct,
+    composition: { ...site.composition },
+  };
+}
 
-  if (effective < site.power * 0.88) {
+export function resolveExpedition(state: GameState, site: WorldSite): void {
+  if (site.cleared) {
+    flash(state, "This land is already yours.");
+    return;
+  }
+  if (!siteUnlocked(state, site)) {
+    const prev = state.sites.find((s) => !s.cleared && state.sites.indexOf(s) < state.sites.indexOf(site));
+    flash(state, `Clear ${prev?.name ?? "earlier camps"} first.`, 4);
+    return;
+  }
+
+  const preview = previewExpedition(state, site);
+  if (preview.fieldTotal < 4) {
+    flash(state, "Leave garrison behind — need at least 4 field troops to march.", 4);
+    return;
+  }
+
+  const losses = preview.lossPct;
+
+  if (!preview.likelyWin) {
     applyFieldLosses(state, losses * 0.65);
     flash(state, `Driven back from ${site.name}. Train more field troops.`, 5);
+    state.selectedSiteId = null;
     return;
   }
 
   applyFieldLosses(state, losses * 0.3);
   site.cleared = true;
+  state.selectedSiteId = null;
   state.resources.wood += site.reward.wood;
   state.resources.stone += site.reward.stone;
   state.resources.food += site.reward.food;
@@ -1193,18 +1249,22 @@ function checkVictory(state: GameState): void {
   }
 }
 
-export function repairKeep(state: GameState): void {
-  if (state.keepHp >= state.keepMaxHp) {
-    flash(state, "The Keep needs no repair.");
-    return;
-  }
-  const missing = state.keepMaxHp - state.keepHp;
-  const cost: Resources = {
+export function repairKeepCost(state: GameState): Resources {
+  const missing = Math.max(0, state.keepMaxHp - state.keepHp);
+  return {
     wood: Math.ceil(missing * 0.15),
     stone: Math.ceil(missing * 0.25),
     food: 0,
     gold: Math.ceil(missing * 0.1),
   };
+}
+
+export function repairKeep(state: GameState): void {
+  if (state.keepHp >= state.keepMaxHp) {
+    flash(state, "The Keep needs no repair.");
+    return;
+  }
+  const cost = repairKeepCost(state);
   if (!canAfford(state.resources, cost)) {
     flash(state, "Cannot afford repairs.");
     return;

@@ -107,8 +107,11 @@ export function loadGame(): GameState | null {
       timeToRaid: data.timeToRaid,
       raidCount: data.raidCount,
       sites: data.sites,
-      cities: data.cities?.length ? data.cities : base.cities,
+      cities: (data.cities?.length ? data.cities : base.cities).map((c) =>
+        c.id === "city_easthollow" ? { ...c, x: 0.24, y: 0.4 } : c,
+      ),
       selectedCityId: null,
+      selectedSiteId: null,
       tutorialStep: data.tutorialStep,
       victory: data.victory,
       defeat: data.defeat,

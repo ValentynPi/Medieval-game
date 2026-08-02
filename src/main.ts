@@ -3,7 +3,7 @@ import { BUILDINGS, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene3d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
-import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedCity, totalTroops } from "./game/state";
+import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedCity, selectedSite, totalTroops } from "./game/state";
 import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/save";
 import {
   finishBattleReturn,
@@ -12,8 +12,10 @@ import {
   issueHoldOrder,
   issueMoveOrder,
   placeBuilding,
+  previewExpedition,
   productionPerSecond,
   repairKeep,
+  repairKeepCost,
   resolveExpedition,
   rotateBuildPreview,
   rotateBuilding,
@@ -28,9 +30,11 @@ import {
   tickEconomy,
   tradeBuy,
   tradeSell,
+  tradeUnitPrices,
   trainTroop,
   trainCostFor,
   upgradeBuilding,
+  upkeepPerSecond,
   useHeroSkill,
 } from "./game/systems";
 import type { Building, BuildingType, GameState, ResourceId, TroopType } from "./game/types";
@@ -62,15 +66,13 @@ app.innerHTML = `
       <div class="legend">
         <span>Camera: WASD / arrows · right-drag · Shift/Alt-drag · scroll zoom (farther = faster pan)</span>
         <span>Infantry &gt; Cavalry &gt; Archers &gt; Infantry</span>
-        <span>Raids: drag-select · L/V/B/C formations · Q Ironwall · 1/2/3 speed · Space pause</span>
+        <span>Raids: drag-select · L/V/B/C formations · Q Ironwall · Shift+1/2/3 speed · Space pause</span>
       </div>
     </main>
     <aside class="panel" id="right-panel"></aside>
   </div>
   <nav class="bottom-nav">
-    <button disabled title="Locked">Build</button>
-    <button disabled title="Locked">Heroes</button>
-    <button class="chapter" id="chapter-btn">Chapter 1 · Rebuild the Village</button>
+    <button class="chapter" id="chapter-btn" type="button">Chapter 1 · Raise farms</button>
     <button id="nav-village" class="active">Village</button>
     <button id="nav-world">World</button>
   </nav>
@@ -80,7 +82,7 @@ app.innerHTML = `
       <p>Raise a stylized March village in 3D — thatched halls, torchlight, and raids at the gate.</p>
       <ul>
         <li>Place farms &amp; camps, upgrade the Keep</li>
-        <li>Click the Barracks to drill troops and set garrison</li>
+        <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
         <li>Clear 8 camps in order on the World Map</li>
         <li>Win: all camps cleared + Keep level 4</li>
       </ul>
@@ -188,6 +190,14 @@ document.querySelector("#nav-world")!.addEventListener("click", () => {
   state.selectedBuild = null;
   state.selectedBuildingId = null;
   village.setGhost(null, null);
+  const field = totalTroops(fieldArmy(state));
+  flash(
+    state,
+    field >= 4
+      ? `World map — time paused. Field army ready: ${field} (garrison stays home).`
+      : `World map — time paused. Need 4+ field troops to march (now ${field}). Lower garrison at the Barracks.`,
+    5,
+  );
   hudDirty = true;
 });
 
@@ -254,7 +264,8 @@ canvas.addEventListener("click", (e) => {
     }
     if (pick.kind === "ground") {
       if (state.battle.selectedIds.length === 0) {
-        selectAllBattleUnits(state);
+        flash(state, "Select units first (drag-box or press A).", 2);
+        return;
       }
       issueMoveOrder(state, pick.x, pick.y);
       hudDirty = true;
@@ -301,17 +312,17 @@ canvas.addEventListener("click", (e) => {
 
 worldCanvas.addEventListener("click", (e) => {
   if (state.mode !== "world") return;
-  const city = worldCityFromPointer(worldCanvas, state, e.clientX, e.clientY);
-  if (city) {
-    state.selectedCityId = city.id;
-    hudDirty = true;
-    return;
-  }
   const site = worldSiteFromPointer(worldCanvas, state, e.clientX, e.clientY);
   if (site) {
     state.selectedCityId = null;
-    resolveExpedition(state, site);
-    persist();
+    state.selectedSiteId = site.id;
+    hudDirty = true;
+    return;
+  }
+  const city = worldCityFromPointer(worldCanvas, state, e.clientX, e.clientY);
+  if (city) {
+    state.selectedSiteId = null;
+    state.selectedCityId = city.id;
     hudDirty = true;
   }
 });
@@ -324,6 +335,11 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (state.mode === "battle" && state.battle?.outcome === "ongoing") {
+    if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2" || e.code === "Digit3")) {
+      setBattleSpeed(state, Number(e.code.replace("Digit", "")));
+      hudDirty = true;
+      return;
+    }
     const k = e.key.toLowerCase();
     if (k === "a") {
       selectAllBattleUnits(state);
@@ -386,23 +402,6 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
-  if (state.mode === "battle" && state.battle?.outcome === "ongoing" && !e.ctrlKey && !e.metaKey) {
-    if (e.key === "1" && e.shiftKey) {
-      setBattleSpeed(state, 1);
-      hudDirty = true;
-      return;
-    }
-    if (e.key === "2" && e.shiftKey) {
-      setBattleSpeed(state, 2);
-      hudDirty = true;
-      return;
-    }
-    if (e.key === "3" && e.shiftKey) {
-      setBattleSpeed(state, 3);
-      hudDirty = true;
-      return;
-    }
-  }
   if (e.key === "Escape") {
     state.selectedBuild = null;
     state.buildRotation = 0;
@@ -447,22 +446,37 @@ function showStage(): void {
   document.querySelector("#nav-world")!.classList.toggle("active", state.mode === "world");
 }
 
+function chapterLabel(step: number): string {
+  if (step <= 0) return "Chapter 1 · Raise farms";
+  if (step === 1) return "Chapter 1 · Build a Barracks";
+  if (step === 2) return "Chapter 1 · Survive a raid";
+  return "Chapter 2 · March the World Map";
+}
+
 function renderResources(): void {
   const r = state.resources;
   const p = productionPerSecond(state);
+  const upkeep = upkeepPerSecond(state);
+  const netFood = p.food - upkeep;
+  const foodClass = netFood < 0 || r.food < 25 ? "drain" : "";
   resourcesEl.innerHTML = `
     <div class="res wood"><b>Wood</b>${fmt(r.wood)}<small>+${p.wood.toFixed(1)}/s</small></div>
     <div class="res stone"><b>Stone</b>${fmt(r.stone)}<small>+${p.stone.toFixed(1)}/s</small></div>
-    <div class="res food"><b>Food</b>${fmt(r.food)}<small>+${p.food.toFixed(1)}/s</small></div>
+    <div class="res food"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${netFood >= 0 ? "+" : ""}${netFood.toFixed(1)}/s</small></div>
     <div class="res gold"><b>Gold</b>${fmt(r.gold)}<small>+${p.gold.toFixed(1)}/s</small></div>
   `;
   dayPill.textContent = `Day ${Math.floor(state.day)} · Keep L${keepLevel(state)}`;
-  raidPill.textContent =
-    state.mode === "battle"
-      ? state.paused
-        ? "PAUSED"
-        : `BATTLE ${state.battle?.battleSpeed ?? 1}x`
-      : `Raid ${Math.max(0, Math.ceil(state.timeToRaid))}s`;
+  if (state.mode === "battle") {
+    raidPill.textContent = state.paused
+      ? "PAUSED"
+      : `BATTLE ${state.battle?.battleSpeed ?? 1}x`;
+  } else if (state.mode === "world") {
+    raidPill.textContent = "TIME PAUSED";
+  } else {
+    raidPill.textContent = `Raid ${Math.max(0, Math.ceil(state.timeToRaid))}s`;
+  }
+  const chapterBtn = document.querySelector("#chapter-btn");
+  if (chapterBtn) chapterBtn.textContent = chapterLabel(state.tutorialStep);
 }
 
 function troopStatLine(type: TroopType, level: number): string {
@@ -500,6 +514,8 @@ function wireTrainingCamp(camp: Building): void {
     input.addEventListener("input", () => {
       setGarrison(state, t, Number(input.value));
       row.querySelector(`#g-${t}`)!.textContent = String(state.garrison[t]);
+      persist();
+      hudDirty = true;
     });
     garBox.appendChild(row);
   });
@@ -509,7 +525,11 @@ function renderHud(): void {
   renderResources();
   showStage();
   messageEl.textContent = state.message;
-  messageEl.classList.toggle("warn", /raid|fallen|driven/i.test(state.message) || state.defeat);
+  messageEl.classList.toggle("hidden", !state.message);
+  messageEl.classList.toggle(
+    "warn",
+    /raid|fallen|driven|starvation|food/i.test(state.message) || state.defeat,
+  );
 
   if (state.mode === "battle") {
     const battle = state.battle;
@@ -564,21 +584,25 @@ function renderHud(): void {
       () => useHeroSkill(state),
     );
   } else if (state.mode === "world") {
+    const wall = totalTroops(state.garrison);
+    const march = totalTroops(fieldArmy(state));
     leftPanel.innerHTML = `
       <h2>The Marches</h2>
-      <p class="hint">Blue markers are trade cities. Colored camps are war targets.</p>
+      <p class="hint">Blue = trade cities. Colored camps = war. Economy &amp; raid timer pause here.</p>
+      <div class="stat-row"><span>Wall (garrison)</span><span>${wall}</span></div>
+      <div class="stat-row"><span>March (field)</span><span>${march}${march < 4 ? " · need 4+" : ""}</span></div>
       <div class="stat-row"><span>Cities</span><span>${state.cities.length}</span></div>
       <div class="stat-row"><span>Camps</span><span>${state.sites.filter((s) => !s.cleared).length} hostile</span></div>
-      <p class="hint">Rivers & lakes (blue), mountains (grey) match the village map.</p>
       <div class="build-grid" id="city-list"></div>
     `;
     const list = leftPanel.querySelector("#city-list")!;
     for (const city of state.cities) {
       const btn = document.createElement("button");
       btn.className = state.selectedCityId === city.id ? "active" : "";
-      btn.innerHTML = `<strong>${city.name}</strong><small>Open market</small>`;
+      btn.innerHTML = `<strong>${city.name}</strong><small>${city.hasPort ? "Port market" : "Open market"}</small>`;
       btn.addEventListener("click", () => {
         state.selectedCityId = city.id;
+        state.selectedSiteId = null;
         hudDirty = true;
         renderHud();
       });
@@ -662,7 +686,7 @@ function renderHud(): void {
     const bl = barracksLevel(state);
     rightPanel.innerHTML = `
       <h2>Field report</h2>
-      <p class="hint">Shift+1/2/3 battle speed · Fog hides unspotted foes</p>
+      <p class="hint">Shift+1/2/3 battle speed · Fog fully hides unspotted foes</p>
       <div class="stat-row"><span>Infantry</span><span>${state.garrison.infantry} · ${variantLabel(troopVariantForLevel("infantry", bl))}</span></div>
       <div class="stat-row"><span>Archers</span><span>${state.garrison.archers} · ${variantLabel(troopVariantForLevel("archers", bl))}</span></div>
       <div class="stat-row"><span>Cavalry</span><span>${state.garrison.cavalry} · ${variantLabel(troopVariantForLevel("cavalry", bl))}</span></div>
@@ -671,18 +695,51 @@ function renderHud(): void {
       <p class="hint">${state.hero.skillDesc}</p>
     `;
   } else if (state.mode === "world") {
+    const site = selectedSite(state);
     const city = selectedCity(state);
-    if (city) {
+    if (site) {
+      const preview = previewExpedition(state, site);
+      const odds = !preview.unlocked
+        ? "Locked — clear earlier camps first"
+        : preview.fieldTotal < 4
+          ? "Need 4+ field troops (lower garrison)"
+          : preview.likelyWin
+            ? "Favorable odds"
+            : "Risky — expect defeat";
+      rightPanel.innerHTML = `
+        <h2>${site.name}</h2>
+        <p class="hint">${odds}</p>
+        <div class="stat-row"><span>Enemy power</span><span>${preview.sitePower}</span></div>
+        <div class="stat-row"><span>Your march power</span><span>${preview.effective}</span></div>
+        <div class="stat-row"><span>Enemy mix</span><span>${preview.composition.infantry}i ${preview.composition.archers}a ${preview.composition.cavalry}c</span></div>
+        <div class="stat-row"><span>Field troops</span><span>${preview.fieldTotal}</span></div>
+        <div class="stat-row"><span>Est. losses</span><span>~${Math.round(preview.lossPct * (preview.likelyWin ? 30 : 65))}%</span></div>
+        <p class="hint">Reward: ${site.reward.wood}w ${site.reward.stone}s ${site.reward.food}f ${site.reward.gold}g</p>
+        <button class="primary" id="march-btn" ${preview.canMarch ? "" : "disabled"}>Confirm march</button>
+        <button id="cancel-march-btn">Cancel</button>
+      `;
+      rightPanel.querySelector("#march-btn")?.addEventListener("click", () => {
+        resolveExpedition(state, site);
+        persist();
+        hudDirty = true;
+        renderHud();
+      });
+      rightPanel.querySelector("#cancel-march-btn")?.addEventListener("click", () => {
+        state.selectedSiteId = null;
+        hudDirty = true;
+        renderHud();
+      });
+    } else if (city) {
       const portTag = city.hasPort ? " · Port city" : "";
       const specials = city.exports?.length
         ? `<p class="hint">Exports: ${city.exports.join(", ")} · Imports: ${city.imports?.join(", ") ?? "—"}</p>`
         : "";
       const sailBonus = city.hasPort
-        ? `<p class="hint">Sail trade: +8% sell price, -8% buy price here.</p>`
+        ? `<p class="hint">Sail trade: +8% sell price, −8% buy price (applied).</p>`
         : "";
       rightPanel.innerHTML = `
         <h2>${city.name} Market${portTag}</h2>
-        <p class="hint">Markets in your village improve trade prices.</p>
+        <p class="hint">Village Markets improve prices further.</p>
         ${specials}
         ${sailBonus}
         <div class="stat-row"><span>Your gold</span><span>${fmt(state.resources.gold)}</span></div>
@@ -690,12 +747,13 @@ function renderHud(): void {
       `;
       const box = rightPanel.querySelector("#trade-box")!;
       (["wood", "stone", "food"] as ResourceId[]).forEach((res) => {
+        const prices = tradeUnitPrices(state, city, res);
         const row = document.createElement("div");
         row.className = "train-row";
         row.innerHTML = `
           <div class="train-row-main">
             <span>${res}</span>
-            <small>Stock ${city.stock[res]} · buy ${city.buyPrice[res]}g · sell ${city.sellPrice[res]}g</small>
+            <small>Stock ${city.stock[res]} · buy ${prices.buy}g · sell ${prices.sell}g</small>
           </div>
           <div class="train-row-main">
             <button data-act="buy">Buy 10</button>
@@ -715,31 +773,38 @@ function renderHud(): void {
       });
     } else {
       rightPanel.innerHTML = `
-        <h2>Trade routes</h2>
-        <p class="hint">Click a blue city on the map to buy and sell goods.</p>
-        <p class="hint">Lighter blue cities are ports with better trade prices.</p>
-        <p class="hint">Hostile camps still launch expeditions when clicked.</p>
+        <h2>Trade &amp; war</h2>
+        <p class="hint">Click a blue city to trade, or a camp to preview a march.</p>
+        <p class="hint">Ports give better buy/sell prices. Garrison never leaves the village.</p>
+        <div class="stat-row"><span>Wall</span><span>${totalTroops(state.garrison)}</span></div>
+        <div class="stat-row"><span>March</span><span>${totalTroops(fieldArmy(state))}</span></div>
       `;
     }
   } else {
   const camp = selectedBarracks(state);
+  const repair = repairKeepCost(state);
+  const repairLabel =
+    state.keepHp >= state.keepMaxHp
+      ? `Keep intact (${fmt(state.keepHp)}/${fmt(state.keepMaxHp)})`
+      : `Repair Keep (${repair.wood}w ${repair.stone}s ${repair.gold}g)`;
   if (camp) {
     const bl = camp.level;
     rightPanel.innerHTML = `
       <h2>Training Camp</h2>
-      <p class="hint">Barracks Lv ${bl} · troops form on the muster field in front of the camp</p>
-      <div class="stat-row"><span>Infantry</span><span>${state.troops.infantry} (${state.garrison.infantry} garrison)</span></div>
-      <div class="stat-row"><span>Archers</span><span>${state.troops.archers} (${state.garrison.archers} garrison)</span></div>
-      <div class="stat-row"><span>Cavalry</span><span>${state.troops.cavalry} (${state.garrison.cavalry} garrison)</span></div>
-      <div class="stat-row"><span>Field army</span><span>${totalTroops(fieldArmy(state))}</span></div>
+      <p class="hint">Barracks Lv ${bl} · Wall troops fight raids; March troops claim camps</p>
+      <div class="stat-row"><span>Infantry</span><span>${state.troops.infantry} (${state.garrison.infantry} wall)</span></div>
+      <div class="stat-row"><span>Archers</span><span>${state.troops.archers} (${state.garrison.archers} wall)</span></div>
+      <div class="stat-row"><span>Cavalry</span><span>${state.troops.cavalry} (${state.garrison.cavalry} wall)</span></div>
+      <div class="stat-row"><span>Wall / March</span><span>${totalTroops(state.garrison)} / ${totalTroops(fieldArmy(state))}</span></div>
       <p class="hint">${troopStatLine("infantry", bl)}</p>
       <p class="hint">${troopStatLine("archers", bl)}</p>
       <p class="hint">${troopStatLine("cavalry", bl)}</p>
       <h2>Drill recruits</h2>
       <div id="train-box"></div>
-      <h2>Garrison duty</h2>
+      <h2>Garrison (wall)</h2>
+      <p class="hint">Sliders assign defenders. Remaining troops form the field army.</p>
       <div id="garrison-box"></div>
-      <button id="repair-btn">Repair Keep (${fmt(state.keepHp)}/${fmt(state.keepMaxHp)})</button>
+      <button id="repair-btn">${repairLabel}</button>
     `;
     wireTrainingCamp(camp);
   } else {
@@ -747,10 +812,10 @@ function renderHud(): void {
       <h2>Realm</h2>
       <p>${state.hero.name} · Lv ${state.hero.level}</p>
       <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
-      <div class="stat-row"><span>Garrison</span><span>${totalTroops(state.garrison)}</span></div>
-      <div class="stat-row"><span>Field army</span><span>${totalTroops(fieldArmy(state))}</span></div>
-      <p class="hint">Click your Training Camp (Barracks) in the village to drill new troops.</p>
-      <button id="repair-btn">Repair Keep (${fmt(state.keepHp)}/${fmt(state.keepMaxHp)})</button>
+      <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
+      <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
+      <p class="hint">Click your Training Camp (Barracks) to drill troops and split wall vs march.</p>
+      <button id="repair-btn">${repairLabel}</button>
     `;
   }
 
@@ -763,10 +828,17 @@ function renderHud(): void {
 
   toolbar.innerHTML = "";
   if (state.mode === "village") {
+    const garrisons = totalTroops(state.garrison);
     const raidBtn = document.createElement("button");
     raidBtn.className = "primary";
-    raidBtn.textContent = "Call Raid Now";
+    raidBtn.textContent = `Call Raid Now · ${garrisons} defenders`;
     raidBtn.addEventListener("click", () => {
+      if (garrisons < 3) {
+        flash(state, "Garrison is thin — assign more wall troops at the Barracks first.", 4);
+        renderHud();
+        return;
+      }
+      if (!window.confirm(`Call a raid now with ${garrisons} garrison defenders?`)) return;
       startRaid(state);
       renderHud();
     });
@@ -834,7 +906,10 @@ function frame(now: number): void {
     if (state.mode === "battle") tickBattle(state, dt);
   }
 
-  if (state.messageTimer > 0) state.messageTimer -= dt;
+  if (state.messageTimer > 0) {
+    state.messageTimer -= dt;
+    if (state.messageTimer <= 0) state.message = "";
+  }
 
   saveTimer += dt;
   if (saveTimer >= SAVE_EVERY && state.mode !== "intro") {
@@ -851,6 +926,7 @@ function frame(now: number): void {
   if (hudDirty || Math.floor(now / 250) !== Math.floor((now - dt * 1000) / 250)) {
     renderResources();
     messageEl.textContent = state.message;
+    messageEl.classList.toggle("hidden", !state.message);
     if (state.mode === "battle") {
       renderHud();
     } else if (hudDirty) {

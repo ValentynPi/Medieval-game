@@ -17,14 +17,17 @@ Open the local URL Vite prints (usually `http://localhost:5173`).
 2. Train troops and set your **garrison** for defense.
 3. Survive timed **raids** (Space pauses — real-time with pause).
 4. Open the **World Map**, march on hostile camps.
-5. **Win:** clear all camps with Keep level 3+.
+5. **Win:** clear all camps with Keep level 4+.
+
+Garrison (wall) fights village raids. Troops left outside the garrison form the field army for World Map marches.
 
 ## Controls
 
 - **Left click** — select / place buildings
-- **Right-click drag** or **Shift-drag** — pan the isometric camera
+- **WASD / arrows**, **right-drag**, or **Shift/Alt-drag** — pan
 - **Mouse wheel** — zoom
-- **Space** — pause raids
+- **Space** — pause battles
+- **Shift+1/2/3** — battle speed
 
 ## Stack
 
