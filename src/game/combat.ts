@@ -28,15 +28,21 @@ export function battleToGrid(x: number, y: number): { gx: number; gy: number } {
   };
 }
 
-/** Deep river/lake channel only (village footpaths may still use shores). */
+/** Deep river/lake channel grid cell (shores are walkable banks). */
+export function isDeepWaterCell(gx: number, gy: number, state?: GameState): boolean {
+  if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
+  return cellBiome(gx, gy, state?.buildings) === "water";
+}
+
+/** Deep river/lake channel only — shores do not block troops. */
 export function isDeepWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  return cellBiome(gx, gy, state?.buildings) === "water";
+  return isDeepWaterCell(gx, gy, state);
 }
 
 /**
  * True when standing on a blue river/lake tile from world gen (channel + banks).
- * Crossing needs a Bridge, a Boat dock, or an enemy river-boat (embarked).
+ * Use for visuals / orders; movement blocking uses isDeepWaterAt.
  */
 export function isWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
@@ -51,21 +57,20 @@ export function isRiverGridCell(gx: number, gy: number, state?: GameState): bool
   return biome === "water" || biome === "water_shore";
 }
 
+/** Troops may stand on shores freely; deep water needs Bridge / Boat. */
 export function canEnterWaterCell(
   state: GameState,
   gx: number,
   gy: number,
-  unit: BattleUnit,
+  _unit: BattleUnit,
 ): boolean {
-  if (!isRiverGridCell(gx, gy, state)) return true;
+  if (!isDeepWaterCell(gx, gy, state)) return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
-  // Brief sail only while standing on a boat dock tile (embarked)
-  if (unit.embarked && hasBoatAt(state, gx, gy)) return true;
   return false;
 }
 
-/** Snap battle coords onto the nearest dry cell (not water/shore). */
+/** Snap battle coords onto land, shore, or a Bridge/Boat deck. */
 export function nearestDryBattlePos(
   state: GameState,
   x: number,
@@ -80,7 +85,7 @@ export function nearestDryBattlePos(
         const cx = gx + dx;
         const cy = gy + dy;
         if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) continue;
-        if (isRiverGridCell(cx, cy, state)) {
+        if (isDeepWaterCell(cx, cy, state)) {
           if (!hasBridgeAt(state, cx, cy) && !hasBoatAt(state, cx, cy)) continue;
         }
         return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
@@ -88,6 +93,33 @@ export function nearestDryBattlePos(
     }
   }
   return null;
+}
+
+/**
+ * Best Bridge/Boat deck to walk via when a straight path hits the river.
+ * Prefers the deck cell on the route from the unit toward the goal (so they cross).
+ */
+export function nearestCrossingToward(
+  state: GameState,
+  fromX: number,
+  fromY: number,
+  towardX: number,
+  towardY: number,
+  maxVia = 1600,
+): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestVia = maxVia;
+  for (const b of state.buildings) {
+    if (b.type !== "bridge" && b.type !== "boat") continue;
+    const bx = b.x * CELL + CELL / 2;
+    const by = b.y * CELL + CELL / 2;
+    const via = Math.hypot(bx - fromX, by - fromY) + Math.hypot(towardX - bx, towardY - by);
+    if (via < bestVia) {
+      bestVia = via;
+      best = { x: bx, y: by };
+    }
+  }
+  return best;
 }
 
 export function terrainAtBattle(x: number, y: number, state?: GameState): TerrainMods {
@@ -124,7 +156,7 @@ export function isBlockedTerrain(
   unit?: BattleUnit,
 ): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  if (!isRiverGridCell(gx, gy, state)) return false;
+  if (!isDeepWaterCell(gx, gy, state)) return false;
   if (!state) return true;
   if (unit) return !canEnterWaterCell(state, gx, gy, unit);
   return !(hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));
