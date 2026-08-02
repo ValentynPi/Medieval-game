@@ -1,0 +1,17 @@
+---
+description: After code changes, push to GitHub and share the live Pages URL
+alwaysApply: true
+---
+
+# GitHub deploy habit
+
+Whenever you finish implementing user-requested code changes in this project:
+
+1. Commit the relevant files (only when the user asked to commit/push, or they already asked to keep GitHub updated — this project has an ongoing push request).
+2. Push to `origin` on `main`.
+3. Reply with the live site URL:
+   **https://valentynpi.github.io/Medieval-game/**
+
+If the GitHub username/repo differs, use `gh repo view --json url,nameWithOwner` and form Pages as `https://<owner>.github.io/<repo>/`.
+
+Do not force-push. Do not skip hooks unless the user asks.
