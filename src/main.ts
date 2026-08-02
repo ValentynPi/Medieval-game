@@ -49,6 +49,24 @@ import {
   villagerJobYieldLabel,
 } from "./game/villagers";
 import type { Building, BuildingType, GameState, ResourceId, TroopType, VillagerJob } from "./game/types";
+import {
+  adminAddResources,
+  adminAddTroops,
+  adminAdvanceDay,
+  adminClearAllCamps,
+  adminClearNextCamp,
+  adminFillResources,
+  adminFinishBuilds,
+  adminForceRaid,
+  adminHealKeep,
+  adminLevelHero,
+  adminMaxKeep,
+  adminResetEndFlags,
+  adminSkipRaidTimer,
+  adminSpawnVillagers,
+  adminStatusLine,
+  adminWinRaid,
+} from "./game/admin";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -63,6 +81,7 @@ app.innerHTML = `
       <div class="pill" id="day-pill">Day 1</div>
       <div class="pill warn" id="raid-pill">Raid --</div>
       <div class="pill" id="save-pill">Saved</div>
+      <button type="button" class="pill admin-toggle" id="admin-toggle" title="Admin panel (F2)">Admin</button>
     </div>
   </header>
   <div class="layout">
@@ -116,6 +135,15 @@ app.innerHTML = `
       <button class="primary" id="raid-result-btn">Return to Village</button>
     </div>
   </div>
+  <aside class="admin-panel hidden" id="admin-panel" aria-label="Admin panel">
+    <div class="admin-head">
+      <h2>Admin</h2>
+      <button type="button" id="admin-close" title="Close (F2 / Esc)">✕</button>
+    </div>
+    <p class="admin-status" id="admin-status">—</p>
+    <div class="admin-grid" id="admin-actions"></div>
+    <p class="hint">Toggle with F2 or the Admin button. Cheats are not saved as a special flag.</p>
+  </aside>
 `;
 
 const stage = document.querySelector<HTMLElement>("#stage")!;
@@ -144,6 +172,64 @@ raidResultBtn.addEventListener("click", () => {
   persist();
   renderHud();
 });
+
+const adminPanel = document.querySelector("#admin-panel")!;
+const adminStatus = document.querySelector("#admin-status")!;
+const adminActions = document.querySelector("#admin-actions")!;
+const adminToggleBtn = document.querySelector("#admin-toggle")!;
+let adminOpen = false;
+
+function setAdminOpen(open: boolean): void {
+  adminOpen = open;
+  adminPanel.classList.toggle("hidden", !open);
+  adminToggleBtn.classList.toggle("active", open);
+  if (open) refreshAdminStatus();
+}
+
+function refreshAdminStatus(): void {
+  adminStatus.textContent = adminStatusLine(state);
+}
+
+function runAdmin(fn: (s: GameState) => void): void {
+  fn(state);
+  persist();
+  hudDirty = true;
+  refreshAdminStatus();
+  renderHud();
+}
+
+function wireAdminPanel(): void {
+  const actions: { label: string; fn: (s: GameState) => void; danger?: boolean }[] = [
+    { label: "+500 resources", fn: (s) => adminAddResources(s, 500) },
+    { label: "Fill coffers", fn: adminFillResources },
+    { label: "Heal Keep", fn: adminHealKeep },
+    { label: "Max Keep level", fn: adminMaxKeep },
+    { label: "+5 troops each", fn: (s) => adminAddTroops(s, 5) },
+    { label: "Level hero", fn: adminLevelHero },
+    { label: "Spawn 3 folk", fn: (s) => adminSpawnVillagers(s, 3) },
+    { label: "Finish builds", fn: adminFinishBuilds },
+    { label: "Raid in 3s", fn: adminSkipRaidTimer },
+    { label: "Force raid", fn: adminForceRaid },
+    { label: "Win raid", fn: adminWinRaid },
+    { label: "Clear next camp", fn: adminClearNextCamp },
+    { label: "Clear all camps", fn: adminClearAllCamps },
+    { label: "+1 day", fn: adminAdvanceDay },
+    { label: "Clear end flags", fn: adminResetEndFlags },
+  ];
+  adminActions.innerHTML = "";
+  for (const a of actions) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = a.label;
+    if (a.danger) btn.classList.add("warn-btn");
+    btn.addEventListener("click", () => runAdmin(a.fn));
+    adminActions.appendChild(btn);
+  }
+  adminToggleBtn.addEventListener("click", () => setAdminOpen(!adminOpen));
+  document.querySelector("#admin-close")!.addEventListener("click", () => setAdminOpen(false));
+}
+
+wireAdminPanel();
 
 let state: GameState = createInitialState();
 let last = performance.now();
@@ -388,6 +474,15 @@ worldCanvas.addEventListener("click", (e) => {
 });
 
 window.addEventListener("keydown", (e) => {
+  if (e.code === "F2") {
+    e.preventDefault();
+    setAdminOpen(!adminOpen);
+    return;
+  }
+  if (e.key === "Escape" && adminOpen) {
+    setAdminOpen(false);
+    return;
+  }
   if (e.code === "Space" && state.mode === "battle") {
     e.preventDefault();
     state.paused = !state.paused;
@@ -1108,6 +1203,7 @@ function frame(now: number): void {
     } else if (hudDirty) {
       renderHud();
     }
+    if (adminOpen) refreshAdminStatus();
   }
 
   requestAnimationFrame(frame);

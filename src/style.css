@@ -217,6 +217,74 @@ body {
   justify-content: center;
 }
 
+.admin-toggle {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font: inherit;
+  color: var(--muted);
+}
+
+.admin-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-panel {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100vh - 88px);
+  overflow: auto;
+  z-index: 30;
+  background: rgba(16, 22, 18, 0.96);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.admin-head h2 {
+  margin: 0;
+  font-family: Cinzel, serif;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+
+.admin-head button {
+  padding: 4px 10px;
+  min-width: 36px;
+}
+
+.admin-status {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.admin-grid button {
+  font-size: 0.82rem;
+  padding: 7px 8px;
+  text-align: left;
+}
+
 button,
 .btn {
   font: inherit;

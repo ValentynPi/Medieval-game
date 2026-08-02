@@ -169,6 +169,18 @@ export function repathVillagersAfterCrossing(state: GameState): void {
   }
 }
 
+/** Debug/admin: force-spawn idle townsfolk near the Keep. */
+export function spawnAdminVillagers(state: GameState, count: number): number {
+  let n = 0;
+  for (let i = 0; i < count; i++) {
+    const v = spawnNearKeep(state);
+    assignJobSite(state, v);
+    state.villagers.push(v);
+    n += 1;
+  }
+  return n;
+}
+
 export function ensureVillagers(state: GameState): void {
   const want = desiredVillagerCount(state);
   const before = state.villagers.length;
