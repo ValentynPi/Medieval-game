@@ -890,7 +890,7 @@ function renderHud(): void {
         state.assignWorkplace ? "Click the map for their workplace…" : "Send to a place…"
       }</button>
       <button id="clear-vil-btn">Deselect</button>
-      <p class="hint">They path around rivers — only Bridges let them cross water.</p>
+      <p class="hint">Open water drowns them — only a Bridge or Boat is safe.</p>
     `;
     const grid = rightPanel.querySelector("#job-grid")!;
     for (const job of jobs) {

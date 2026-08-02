@@ -1,5 +1,5 @@
 import { GRID_H, GRID_W, HIRE_BUILDER_COST, canAfford, pay } from "./config";
-import { findPath, isFootWalkable, nearestWalkable } from "./pathfind";
+import { findPath, isDrowningCell, isFootWalkable, nearestWalkable } from "./pathfind";
 import { keepLevel, uid } from "./state";
 import { cellBiome } from "./worldGen";
 import type {
@@ -45,7 +45,7 @@ export const JOB_LABELS: Record<VillagerJob, string> = {
 };
 
 export const JOB_HINTS: Record<VillagerJob, string> = {
-  idle: "Strolls near the Keep — never walks rivers without a bridge.",
+  idle: "Strolls near the Keep — open water drowns them (Bridge or Boat only).",
   woodcutter: "Takes forest paths and brings back wood.",
   farmer: "Works farms and fields for food.",
   quarryman: "Works quarries / rocky ground for stone.",
@@ -160,18 +160,6 @@ export function ensureVillagers(state: GameState): void {
   }
   if (before === 0 && state.villagers.length > 0) {
     seedVillagerJobs(state);
-  }
-  // Rescue anyone stranded on water
-  for (const v of state.villagers) {
-    if (!isFootWalkable(state, Math.floor(v.x), Math.floor(v.y))) {
-      const land = nearestWalkable(state, v.x, v.y, 16);
-      if (land) {
-        v.x = land.x + 0.5;
-        v.y = land.y + 0.5;
-        v.path = [];
-        v.pathI = 0;
-      }
-    }
   }
 }
 
@@ -323,7 +311,7 @@ export function setVillagerWorkplace(
     return false;
   }
   if (!isFootWalkable(state, gx, gy)) {
-    tell(state, "No path — rivers need a Bridge before anyone can cross.", 3);
+    tell(state, "They would drown there — use a Bridge or Boat, not open water.", 3);
     return false;
   }
   if (v.job === "idle") {
@@ -546,9 +534,44 @@ function tickBuilders(state: GameState, dt: number): void {
   }
 }
 
+function drownUnsafeVillagers(state: GameState): void {
+  const kept: typeof state.villagers = [];
+  let drowned = 0;
+  let lastName = "";
+  for (const v of state.villagers) {
+    const gx = Math.floor(v.x);
+    const gy = Math.floor(v.y);
+    if (isDrowningCell(state, gx, gy)) {
+      drowned += 1;
+      lastName = v.name;
+      if (v.siteId) {
+        const site = state.constructionSites.find((s) => s.id === v.siteId);
+        if (site) site.builderId = null;
+      }
+      if (state.selectedVillagerId === v.id) {
+        state.selectedVillagerId = null;
+        state.assignWorkplace = false;
+      }
+      continue;
+    }
+    kept.push(v);
+  }
+  if (drowned > 0) {
+    state.villagers = kept;
+    tell(
+      state,
+      drowned === 1
+        ? `${lastName} drowned in the river — need a Bridge or Boat to cross.`
+        : `${drowned} townsfolk drowned in open water — Bridges and Boats only.`,
+      5,
+    );
+  }
+}
+
 export function tickVillagers(state: GameState, dt: number): void {
   if (state.mode !== "village" || state.defeat || state.victory) return;
   ensureVillagers(state);
+  drownUnsafeVillagers(state);
   tickBuilders(state, dt);
 
   for (const v of state.villagers) {

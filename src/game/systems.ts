@@ -1039,6 +1039,20 @@ export function tickBattle(state: GameState, dt: number): void {
   refreshFogOfWar(state);
   tickCombatFloats(battle, dt);
 
+  // Open water without bridge/boat/embarked → drown
+  for (const u of units) {
+    if (u.hp <= 0 || u.kind === "keep" || u.kind === "tower" || u.speed <= 0) continue;
+    if (!isWaterAt(u.x, u.y, state)) continue;
+    const cell = battleToGrid(u.x, u.y);
+    if (canEnterWaterCell(state, cell.gx, cell.gy, u)) continue;
+    u.hp = 0;
+    u.routing = true;
+    addCombatFloat(battle, u.x, u.y, "Drowned!", "#6a9ec8");
+    if (u.side === "player" && u.troopType) {
+      battle.casualties[u.troopType] = (battle.casualties[u.troopType] ?? 0) + 1;
+    }
+  }
+
   for (const u of units) {
     if (u.hp <= 0) continue;
     if (u.kind === "keep") continue;

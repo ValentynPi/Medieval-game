@@ -2,12 +2,27 @@ import { GRID_H, GRID_W } from "./config";
 import { cellBiome, isWaterBiome } from "./worldGen";
 import type { GameState } from "./types";
 
-/** Land, or water only if a Bridge sits on that cell. Boats do not count for foot traffic. */
+/** Safe to stand on water: Bridge underfoot or a docked Boat. */
+export function hasWaterCrossing(state: GameState, gx: number, gy: number): boolean {
+  return state.buildings.some(
+    (b) => b.x === gx && b.y === gy && (b.type === "bridge" || b.type === "boat"),
+  );
+}
+
+/** Open water with no bridge/boat — stepping here drowns. */
+export function isDrowningCell(state: GameState, gx: number, gy: number): boolean {
+  if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
+  const biome = cellBiome(gx, gy, state.buildings);
+  if (!isWaterBiome(biome)) return false;
+  return !hasWaterCrossing(state, gx, gy);
+}
+
+/** Land, or water only with a Bridge or Boat. Open river = blocked (would drown). */
 export function isFootWalkable(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   const biome = cellBiome(gx, gy, state.buildings);
   if (!isWaterBiome(biome)) return true;
-  return state.buildings.some((b) => b.x === gx && b.y === gy && b.type === "bridge");
+  return hasWaterCrossing(state, gx, gy);
 }
 
 export function nearestWalkable(
