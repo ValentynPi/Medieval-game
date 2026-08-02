@@ -16,48 +16,58 @@ export function battleToGrid(x: number, y: number): { gx: number; gy: number } {
   };
 }
 
-/** Deep water channel (not riverbank shores). */
-export function isWaterAt(x: number, y: number, state?: GameState): boolean {
+/** Deep river/lake channel only (village footpaths may still use shores). */
+export function isDeepWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
   return cellBiome(gx, gy, state?.buildings) === "water";
 }
 
-/** Riverbanks OK. Deep water only with a Bridge or Boat dock — no free swimming. */
+/**
+ * Battle treats river channel AND banks as water — matches the blue tiles on the map.
+ * Crossing needs a Bridge, a Boat dock, or an enemy river-boat (embarked).
+ */
+export function isWaterAt(x: number, y: number, state?: GameState): boolean {
+  const { gx, gy } = battleToGrid(x, y);
+  const biome = cellBiome(gx, gy, state?.buildings);
+  return biome === "water" || biome === "water_shore";
+}
+
 export function canEnterWaterCell(
   state: GameState,
   gx: number,
   gy: number,
-  _unit: BattleUnit,
+  unit: BattleUnit,
 ): boolean {
   const biome = cellBiome(gx, gy, state.buildings);
-  if (biome !== "water") return true;
+  if (biome !== "water" && biome !== "water_shore") return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
+  // Only enemy boat-raiders may sail open water; player troops never “swim”
+  if (unit.embarked && unit.side === "enemy" && biome === "water") return true;
   return false;
 }
 
-/** Nearest dry / bridge / boat cell in battle pixels */
+/** Snap battle coords onto the nearest dry cell (not water/shore). */
 export function nearestDryBattlePos(
   state: GameState,
   x: number,
   y: number,
+  maxR = 10,
 ): { x: number; y: number } | null {
-  const start = battleToGrid(x, y);
-  for (let r = 0; r <= 24; r++) {
+  const { gx, gy } = battleToGrid(x, y);
+  for (let r = 0; r <= maxR; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (r > 0 && Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-        const gx = start.gx + dx;
-        const gy = start.gy + dy;
-        if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) continue;
-        const biome = cellBiome(gx, gy, state.buildings);
-        if (biome === "water" && !hasBridgeAt(state, gx, gy) && !hasBoatAt(state, gx, gy)) {
-          continue;
+        const cx = gx + dx;
+        const cy = gy + dy;
+        if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) continue;
+        const biome = cellBiome(cx, cy, state.buildings);
+        if (biome === "water" || biome === "water_shore") {
+          // Bridge deck counts as a safe foothold
+          if (!hasBridgeAt(state, cx, cy) && !hasBoatAt(state, cx, cy)) continue;
         }
-        return {
-          x: gx * CELL + CELL / 2,
-          y: gy * CELL + CELL / 2,
-        };
+        return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
       }
     }
   }
@@ -99,8 +109,7 @@ export function isBlockedTerrain(
 ): boolean {
   const { gx, gy } = battleToGrid(x, y);
   const biome = cellBiome(gx, gy, state?.buildings);
-  // Only the deep channel blocks; shores are walkable banks
-  if (biome !== "water") return false;
+  if (biome !== "water" && biome !== "water_shore") return false;
   if (!state) return true;
   if (unit) return !canEnterWaterCell(state, gx, gy, unit);
   return !(hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));
