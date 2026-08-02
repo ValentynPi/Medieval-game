@@ -92,7 +92,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   bridge: {
     type: "bridge",
     name: "Bridge",
-    description: "Cross rivers and lakes on foot. Place only on water.",
+    description: "Spans the river to both shores. Townsfolk path across it.",
     maxLevel: 2,
     baseCost: { wood: 55, stone: 35, food: 10, gold: 15 },
     costGrowth: 1.4,

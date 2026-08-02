@@ -42,7 +42,8 @@ import {
   variantUnlockedAt,
 } from "./combat";
 import { biomeAt, buildBlockedReason, cellBiome, isBuildableCell, isWaterBiome } from "./worldGen";
-import { registerFinishSite, tickVillagers } from "./villagers";
+import { registerFinishSite, repathVillagersAfterCrossing, tickVillagers } from "./villagers";
+import { bridgeSpanCells } from "./pathfind";
 import type {
   BattleState,
   BattleUnit,
@@ -264,6 +265,32 @@ function completeBuilding(
     flash(state, "Builders finished the Gold Mine.");
     return;
   }
+  if (type === "bridge") {
+    const span = bridgeSpanCells(x, y);
+    let added = 0;
+    for (const cell of span) {
+      if (buildingAt(state, cell.x, cell.y)) continue;
+      state.buildings.push({
+        id: uid("bld"),
+        type: "bridge",
+        level: 1,
+        x: cell.x,
+        y: cell.y,
+        rotation: rot,
+      });
+      added += 1;
+    }
+    repathVillagersAfterCrossing(state);
+    flash(
+      state,
+      added > 1
+        ? `Bridge spans ${added} tiles — townsfolk will cross here.`
+        : "Bridge laid — townsfolk can cross on foot.",
+      4,
+    );
+    return;
+  }
+
   const building = {
     id: uid("bld"),
     type,
@@ -276,8 +303,6 @@ function completeBuilding(
   state.buildings.push(building);
   if (type === "farm") {
     flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.`);
-  } else if (type === "bridge") {
-    flash(state, "Bridge spans the water — townsfolk can cross on foot.");
   } else if (type === "boat") {
     flash(state, "Boat docked — move troops onto it to sail the river.");
   } else if (type === "road") {
@@ -352,7 +377,8 @@ export function placeBuilding(
 
   if (!needsCrew) {
     completeBuilding(state, type, x, y, rot);
-    if (spent) flash(state, `${def.name} — paid ${spent}.`, 3);
+    // Bridge already flashes a span message — don't overwrite it
+    if (spent && type !== "bridge") flash(state, `${def.name} — paid ${spent}.`, 3);
     return true;
   }
 

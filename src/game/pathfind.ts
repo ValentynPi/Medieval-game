@@ -1,5 +1,5 @@
 import { GRID_H, GRID_W } from "./config";
-import { cellBiome } from "./worldGen";
+import { biomeAt, cellBiome, isWaterBiome } from "./worldGen";
 import type { GameState } from "./types";
 
 /** Safe to stand on water: Bridge underfoot or a docked Boat. */
@@ -7,6 +7,50 @@ export function hasWaterCrossing(state: GameState, gx: number, gy: number): bool
   return state.buildings.some(
     (b) => b.x === gx && b.y === gy && (b.type === "bridge" || b.type === "boat"),
   );
+}
+
+/**
+ * Cells a single Bridge placement should cover — spans the river/lake
+ * to dry land on both sides (shortest axis), so townsfolk can actually cross.
+ */
+export function bridgeSpanCells(gx: number, gy: number): { x: number; y: number }[] {
+  if (!isWaterBiome(biomeAt(gx, gy))) return [{ x: gx, y: gy }];
+
+  const wet = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && isWaterBiome(biomeAt(x, y));
+  const land = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !isWaterBiome(biomeAt(x, y));
+
+  const tryAxis = (dx: number, dy: number): { x: number; y: number }[] | null => {
+    const forward: { x: number; y: number }[] = [];
+    let x = gx + dx;
+    let y = gy + dy;
+    while (wet(x, y) && forward.length < 14) {
+      forward.push({ x, y });
+      x += dx;
+      y += dy;
+    }
+    if (!land(x, y)) return null;
+
+    const back: { x: number; y: number }[] = [];
+    x = gx - dx;
+    y = gy - dy;
+    while (wet(x, y) && back.length + forward.length < 14) {
+      back.push({ x, y });
+      x -= dx;
+      y -= dy;
+    }
+    if (!land(x, y)) return null;
+
+    return [...back.reverse(), { x: gx, y: gy }, ...forward];
+  };
+
+  const spans = [tryAxis(1, 0), tryAxis(0, 1)].filter(
+    (s): s is { x: number; y: number }[] => !!s && s.length > 0,
+  );
+  if (!spans.length) return [{ x: gx, y: gy }];
+  spans.sort((a, b) => a.length - b.length);
+  return spans[0];
 }
 
 /** Deep river/lake channel with no bridge/boat — stepping here drowns. Shores are safe. */
@@ -99,7 +143,7 @@ export function findPath(
   ];
 
   let steps = 0;
-  const MAX_STEPS = 5000;
+  const MAX_STEPS = 14000;
 
   while (open.length && steps < MAX_STEPS) {
     steps++;
@@ -143,10 +187,14 @@ export function findPath(
         }
       }
       const stepCost = dx !== 0 && dy !== 0 ? 1.414 : 1;
-      // Prefer roads / meadows a little (human routes)
+      // Prefer roads and bridges so townsfolk funnel across crossings
       const biome = cellBiome(nx, ny, state.buildings);
-      const terrain =
-        biome === "path" || state.buildings.some((b) => b.x === nx && b.y === ny && b.type === "road")
+      const onBridge = state.buildings.some(
+        (b) => b.x === nx && b.y === ny && (b.type === "bridge" || b.type === "boat"),
+      );
+      const terrain = onBridge
+        ? 0.55
+        : biome === "path" || state.buildings.some((b) => b.x === nx && b.y === ny && b.type === "road")
           ? 0.82
           : biome === "deep_forest"
             ? 1.35

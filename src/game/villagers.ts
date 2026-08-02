@@ -149,6 +149,26 @@ function setDestination(state: GameState, v: Villager, tx: number, ty: number): 
   return true;
 }
 
+/** After a Bridge is built, townsfolk rediscover routes across the river. */
+export function repathVillagersAfterCrossing(state: GameState): void {
+  for (const v of state.villagers) {
+    if (v.job === "builder" && v.siteId) {
+      const site = state.constructionSites.find((s) => s.id === v.siteId);
+      if (site) {
+        setDestination(state, v, site.x + 0.5, site.y + 0.5);
+        continue;
+      }
+    }
+    if (v.workGx != null && v.workGy != null) {
+      if (!setDestination(state, v, v.workGx + 0.5, v.workGy + 0.5)) {
+        assignJobSite(state, v);
+      }
+      continue;
+    }
+    assignJobSite(state, v);
+  }
+}
+
 export function ensureVillagers(state: GameState): void {
   const want = desiredVillagerCount(state);
   const before = state.villagers.length;
