@@ -211,23 +211,23 @@ function scoreSite(
   return 1000 - dist + Math.random() * 8;
 }
 
-function findJobSite(
+function collectJobCandidates(
   state: GameState,
   v: Villager,
   job: VillagerJob,
-): { x: number; y: number } | null {
+): { x: number; y: number; s: number }[] {
   const k = keepCell(state);
   const originX = v.x;
   const originY = v.y;
-  let best: { x: number; y: number; s: number } | null = null;
+  const candidates: { x: number; y: number; s: number }[] = [];
 
   for (const b of state.buildings) {
     const s = scoreSite(state, job, b.x, b.y, originX, originY);
-    if (s > (best?.s ?? -1)) best = { x: b.x, y: b.y, s };
+    if (s > 0) candidates.push({ x: b.x, y: b.y, s });
     if (b.type === "farm" && job === "farmer" && b.fields) {
       for (const f of b.fields) {
         const fs = scoreSite(state, job, f.x, f.y, originX, originY);
-        if (fs > (best?.s ?? -1)) best = { x: f.x, y: f.y, s: fs };
+        if (fs > 0) candidates.push({ x: f.x, y: f.y, s: fs });
       }
     }
   }
@@ -235,18 +235,40 @@ function findJobSite(
   if (job === "woodcutter" || job === "quarryman" || job === "idle" || job === "builder") {
     const cx = Math.round(job === "idle" || job === "builder" ? k.x : originX);
     const cy = Math.round(job === "idle" || job === "builder" ? k.y : originY);
-    const radius = job === "idle" || job === "builder" ? 8 : 28;
-    for (let dy = -radius; dy <= radius; dy += 2) {
-      for (let dx = -radius; dx <= radius; dx += 2) {
+    // Woodcutters need a wide search — trees sit outside the meadow ring
+    const radius = job === "woodcutter" ? 48 : job === "idle" || job === "builder" ? 8 : 28;
+    const step = job === "woodcutter" ? 1 : 2;
+    for (let dy = -radius; dy <= radius; dy += step) {
+      for (let dx = -radius; dx <= radius; dx += step) {
         const gx = cx + dx;
         const gy = cy + dy;
         const s = scoreSite(state, job, gx, gy, originX, originY);
-        if (s > (best?.s ?? -1)) best = { x: gx, y: gy, s };
+        if (s > 0) candidates.push({ x: gx, y: gy, s });
       }
     }
   }
 
-  return best ? { x: best.x, y: best.y } : null;
+  candidates.sort((a, b) => b.s - a.s);
+  return candidates;
+}
+
+/** Pick a job site that actually has a land path (no open-water crossing). */
+function findJobSite(
+  state: GameState,
+  v: Villager,
+  job: VillagerJob,
+): { x: number; y: number } | null {
+  const candidates = collectJobCandidates(state, v, job);
+  const tried = new Set<string>();
+  for (const c of candidates) {
+    const key = `${c.x},${c.y}`;
+    if (tried.has(key)) continue;
+    tried.add(key);
+    const path = findPath(state, v.x, v.y, c.x + 0.5, c.y + 0.5);
+    if (path && path.length) return { x: c.x, y: c.y };
+    if (tried.size >= 24) break;
+  }
+  return candidates[0] ? { x: candidates[0].x, y: candidates[0].y } : null;
 }
 
 export function assignJobSite(state: GameState, v: Villager): boolean {
@@ -269,7 +291,15 @@ export function assignJobSite(state: GameState, v: Villager): boolean {
   }
   v.workGx = site.x;
   v.workGy = site.y;
-  return setDestination(state, v, site.x + 0.5, site.y + 0.5);
+  if (!setDestination(state, v, site.x + 0.5, site.y + 0.5)) {
+    // Unreachable woods — keep looking next tick instead of fake-working in place
+    v.path = [];
+    v.pathI = 0;
+    v.phase = "walk";
+    v.pause = 0.6 + Math.random() * 0.8;
+    return false;
+  }
+  return true;
 }
 
 export function setVillagerJob(state: GameState, id: string, job: VillagerJob): boolean {
@@ -464,7 +494,21 @@ function followPath(state: GameState, v: Villager, dt: number): boolean {
 }
 
 function deliverWork(state: GameState, v: Villager): void {
-  const yieldAmt = WORK_YIELD[v.job];
+  const yieldAmt = { ...WORK_YIELD[v.job] };
+  // Chopping at a Lumber Camp or in standing woods pays out fuller hauls
+  if (v.job === "woodcutter" && v.workGx != null && v.workGy != null) {
+    const atLumber = state.buildings.some(
+      (b) => b.type === "lumber" && b.x === v.workGx && b.y === v.workGy,
+    );
+    const biome = cellBiome(v.workGx, v.workGy, state.buildings);
+    const inWoods =
+      biome === "forest" ||
+      biome === "deep_forest" ||
+      state.buildings.some((b) => b.type === "forest" && b.x === v.workGx && b.y === v.workGy);
+    if (atLumber) yieldAmt.wood = (yieldAmt.wood ?? 0) * 1.35;
+    else if (inWoods) yieldAmt.wood = (yieldAmt.wood ?? 0) * 1.15;
+    else yieldAmt.wood = (yieldAmt.wood ?? 0) * 0.35; // not actually at trees
+  }
   for (const key of Object.keys(yieldAmt) as (keyof Resources)[]) {
     state.resources[key] += yieldAmt[key] ?? 0;
   }
@@ -579,13 +623,21 @@ export function tickVillagers(state: GameState, dt: number): void {
     v.anim += dt * (v.phase === "walk" ? 7.5 : 3.2);
 
     if (v.phase === "walk") {
+      if (!v.path.length && (v.workGx == null || Math.hypot(v.tx - v.x, v.ty - v.y) < ARRIVE)) {
+        // No route yet — keep seeking a reachable workplace (esp. woodcutters)
+        if (v.pause <= 0) assignJobSite(state, v);
+        else v.pause -= dt;
+        continue;
+      }
       const arrived = followPath(state, v, dt);
       if (arrived) {
         if (v.job === "idle") {
           assignJobSite(state, v);
-        } else {
+        } else if (v.workGx != null) {
           v.phase = "work";
           v.workTimer = WORK_DURATION * (0.85 + Math.random() * 0.3);
+        } else {
+          assignJobSite(state, v);
         }
       }
       continue;

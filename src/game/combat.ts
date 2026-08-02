@@ -16,18 +16,21 @@ export function battleToGrid(x: number, y: number): { gx: number; gy: number } {
   };
 }
 
+/** Deep water channel (not riverbank shores). */
 export function isWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  return isWaterBiome(cellBiome(gx, gy, state?.buildings));
+  return cellBiome(gx, gy, state?.buildings) === "water";
 }
 
-/** Bridge footpath, docked boat, or already sailing */
+/** Riverbanks are always OK; deep water needs bridge, boat dock, or already sailing */
 export function canEnterWaterCell(
   state: GameState,
   gx: number,
   gy: number,
   unit: BattleUnit,
 ): boolean {
+  const biome = cellBiome(gx, gy, state.buildings);
+  if (biome !== "water") return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
   if (unit.embarked) return true;
@@ -69,7 +72,8 @@ export function isBlockedTerrain(
 ): boolean {
   const { gx, gy } = battleToGrid(x, y);
   const biome = cellBiome(gx, gy, state?.buildings);
-  if (!isWaterBiome(biome)) return false;
+  // Only the deep channel blocks; shores are walkable banks
+  if (biome !== "water") return false;
   if (!state) return true;
   if (unit) return !canEnterWaterCell(state, gx, gy, unit);
   return !(hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));

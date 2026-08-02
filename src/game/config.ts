@@ -56,7 +56,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   lumber: {
     type: "lumber",
     name: "Lumber Camp",
-    description: "Fell timber from the March woods.",
+    description: "Fell timber from the March woods. Place near trees; woodcutters haul more here.",
     maxLevel: 6,
     baseCost: { wood: 20, stone: 15, food: 20, gold: 10 },
     costGrowth: 1.45,
@@ -215,7 +215,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
 };
 
-/** Buildings that appear instantly (paths, water works, terrain). Others need builders. */
+/** Buildings that appear instantly (paths, water works, terrain, early camps). Others need builders. */
 export const INSTANT_BUILD: BuildingType[] = [
   "road",
   "forest",
@@ -223,6 +223,8 @@ export const INSTANT_BUILD: BuildingType[] = [
   "bridge",
   "boat",
   "buildersHall",
+  "lumber",
+  "quarry",
 ];
 
 export const HIRE_BUILDER_COST: Resources = { wood: 0, stone: 0, food: 28, gold: 22 };

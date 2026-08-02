@@ -656,7 +656,7 @@ function renderHud(): void {
   } else {
     leftPanel.innerHTML = `
     <h2>Build</h2>
-    <p>Builders Hall first for farms &amp; halls. Bridges let people cross rivers. Roads · forests · mountains instant.</p>
+    <p>Lumber &amp; quarry place instantly. Farms/halls need builders. Shore is safe — only deep river needs a Bridge.</p>
     <div class="build-grid" id="build-grid"></div>
     <h2>Selected</h2>
     <div id="selected-box"></div>

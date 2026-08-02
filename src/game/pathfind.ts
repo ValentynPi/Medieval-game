@@ -9,20 +9,23 @@ export function hasWaterCrossing(state: GameState, gx: number, gy: number): bool
   );
 }
 
-/** Open water with no bridge/boat — stepping here drowns. */
+/** Deep river/lake channel with no bridge/boat — stepping here drowns. Shores are safe. */
 export function isDrowningCell(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   const biome = cellBiome(gx, gy, state.buildings);
-  if (!isWaterBiome(biome)) return false;
+  if (biome !== "water") return false;
   return !hasWaterCrossing(state, gx, gy);
 }
 
-/** Land, or water only with a Bridge or Boat. Open river = blocked (would drown). */
+/**
+ * Walkable on land and riverbanks. Open water (biome water) needs a Bridge or Boat.
+ * Shore used to be treated as water and broke woodcutters pathing to forests.
+ */
 export function isFootWalkable(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   const biome = cellBiome(gx, gy, state.buildings);
-  if (!isWaterBiome(biome)) return true;
-  return hasWaterCrossing(state, gx, gy);
+  if (biome === "water") return hasWaterCrossing(state, gx, gy);
+  return true;
 }
 
 export function nearestWalkable(
