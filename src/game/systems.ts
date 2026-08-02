@@ -5,7 +5,6 @@ import {
   fieldArmy,
   fieldAt,
   hasBoatAt,
-  hasBridgeAt,
   keepLevel,
   refreshKeepHpCap,
   selectedBarracks,
@@ -26,8 +25,8 @@ import {
   heroSkillDefenseMult,
   battleToGrid,
   canEnterWaterCell,
-  isDeepWaterAt,
   isFlanked,
+  isTroopWalkableAt,
   isWaterAt,
   nearestCrossingToward,
   nearestDryBattlePos,
@@ -870,12 +869,9 @@ export function useHeroSkill(state: GameState): boolean {
 }
 
 export function issueMoveOrder(state: GameState, x: number, y: number): void {
-  if (state.battle && isDeepWaterAt(x, y, state)) {
-    const cell = battleToGrid(x, y);
-    if (!hasBridgeAt(state, cell.gx, cell.gy) && !hasBoatAt(state, cell.gx, cell.gy)) {
-      flash(state, "Cannot march into the river — click the Bridge deck, or build one.", 3);
-      return;
-    }
+  if (state.battle && !isTroopWalkableAt(state, x, y)) {
+    flash(state, "Cannot march into the river — click the Bridge or dry land.", 3);
+    return;
   }
   const battle = state.battle;
   if (!battle || battle.selectedIds.length === 0) return;
@@ -892,10 +888,23 @@ export function issueMoveOrder(state: GameState, x: number, y: number): void {
   const slots = formationSlots(battle.formation, selected.length, x, y, facing);
 
   selected.forEach((u, i) => {
+    let tx = slots[i]?.x ?? x;
+    let ty = slots[i]?.y ?? y;
+    // Formation spread must not park soldiers on open blue tiles
+    if (!isTroopWalkableAt(state, tx, ty, u)) {
+      const dry = nearestDryBattlePos(state, tx, ty, 20);
+      if (dry) {
+        tx = dry.x;
+        ty = dry.y;
+      } else {
+        tx = x;
+        ty = y;
+      }
+    }
     u.order = "move";
     u.routing = false;
-    u.orderX = slots[i]?.x ?? x;
-    u.orderY = slots[i]?.y ?? y;
+    u.orderX = tx;
+    u.orderY = ty;
     u.facing = facing;
   });
   battle.orderMarker = { x, y };
@@ -999,30 +1008,19 @@ function tryBoardOrBlockWater(
 ): boolean {
   const next = battleToGrid(nextX, nextY);
   const cur = battleToGrid(u.x, u.y);
-  const nextDeep = isDeepWaterAt(nextX, nextY, state);
-  const curDeep = isDeepWaterAt(u.x, u.y, state);
+  const nextWet = isWaterAt(nextX, nextY, state);
+  const curWet = isWaterAt(u.x, u.y, state);
 
-  // Shores and land are always fine
-  if (!nextDeep) {
-    if (u.embarked && curDeep) u.embarked = false;
+  if (!nextWet) {
+    if (u.embarked && curWet) u.embarked = false;
     return true;
   }
 
-  // Deep water: Bridge / Boat deck only
+  // Blue tile: Bridge / Boat deck only (banks count as water visually)
   if (canEnterWaterCell(state, next.gx, next.gy, u)) {
-    if (hasBoatAt(state, next.gx, next.gy) || hasBoatAt(state, cur.gx, cur.gy)) {
-      u.embarked = true;
-    } else {
-      u.embarked = false;
-    }
+    u.embarked = hasBoatAt(state, next.gx, next.gy) || hasBoatAt(state, cur.gx, cur.gy);
     return true;
   }
-
-  // Stepping off a dock into open water is not allowed
-  if (hasBoatAt(state, cur.gx, cur.gy)) {
-    return false;
-  }
-
   return false;
 }
 
@@ -1042,8 +1040,8 @@ function moveUnit(
   let nextX = u.x + dirX * step;
   let nextY = u.y + dirY * step;
 
-  if (state && isDeepWaterAt(nextX, nextY, state) && !tryBoardOrBlockWater(state, u, nextX, nextY)) {
-    // Straight line hit the channel — walk via Bridge deck toward the goal
+  if (state && !isTroopWalkableAt(state, nextX, nextY, u)) {
+    // Hit open water — march via Bridge toward the goal
     const goalX = u.orderX ?? u.x + nx * 400;
     const goalY = u.orderY ?? u.y + ny * 400;
     const crossing = nearestCrossingToward(state, u.x, u.y, goalX, goalY);
@@ -1051,47 +1049,49 @@ function moveUnit(
     const dx = crossing.x - u.x;
     const dy = crossing.y - u.y;
     const d = Math.hypot(dx, dy) || 1;
-    // Already on that deck tile — step toward the goal along the span
-    if (d < 18) {
-      dirX = nx;
-      dirY = ny;
-      nextX = u.x + dirX * step;
-      nextY = u.y + dirY * step;
-      if (isDeepWaterAt(nextX, nextY, state) && !tryBoardOrBlockWater(state, u, nextX, nextY)) {
-        // Nudge to next deck cell closer to the goal
-        const nextDeck = nearestCrossingToward(
-          state,
-          u.x + nx * CELL,
-          u.y + ny * CELL,
-          goalX,
-          goalY,
-        );
-        if (!nextDeck) return;
+    if (d < 22) {
+      // On / at deck: prefer next deck cell toward the goal, then land
+      const nextDeck = nearestCrossingToward(
+        state,
+        u.x + nx * CELL * 0.85,
+        u.y + ny * CELL * 0.85,
+        goalX,
+        goalY,
+      );
+      if (nextDeck && (nextDeck.x !== crossing.x || nextDeck.y !== crossing.y || d > 8)) {
         const ddx = nextDeck.x - u.x;
         const ddy = nextDeck.y - u.y;
         const dd = Math.hypot(ddx, ddy) || 1;
         dirX = ddx / dd;
         dirY = ddy / dd;
-        nextX = u.x + dirX * step;
-        nextY = u.y + dirY * step;
-        if (isDeepWaterAt(nextX, nextY, state) && !tryBoardOrBlockWater(state, u, nextX, nextY)) {
-          return;
-        }
+      } else {
+        dirX = nx;
+        dirY = ny;
       }
+      nextX = u.x + dirX * step;
+      nextY = u.y + dirY * step;
+      if (!isTroopWalkableAt(state, nextX, nextY, u)) return;
     } else {
       dirX = dx / d;
       dirY = dy / d;
       nextX = u.x + dirX * step;
       nextY = u.y + dirY * step;
-      if (isDeepWaterAt(nextX, nextY, state) && !tryBoardOrBlockWater(state, u, nextX, nextY)) {
-        return;
-      }
+      if (!isTroopWalkableAt(state, nextX, nextY, u)) return;
     }
   } else if (state && u.embarked) {
     tryBoardOrBlockWater(state, u, nextX, nextY);
   }
 
   resolveWallBlock(units, u, dirX, dirY, dt * speedMult);
+  // Hard clamp — never end a step standing in open river
+  if (state && !isTroopWalkableAt(state, u.x, u.y, u)) {
+    const dry = nearestDryBattlePos(state, u.x, u.y, 12);
+    if (dry) {
+      u.x = dry.x;
+      u.y = dry.y;
+      u.embarked = false;
+    }
+  }
   if (Math.abs(dirX) + Math.abs(dirY) > 0.01) {
     u.facing = Math.atan2(dirX, dirY);
   }
@@ -1127,25 +1127,21 @@ function finishRaidVictory(state: GameState, battle: BattleState): void {
 
 function ejectFromRiver(state: GameState, u: BattleUnit): void {
   if (u.hp <= 0 || u.kind === "keep" || u.kind === "tower" || u.speed <= 0) return;
-  // Only deep channel without a Bridge/Boat is illegal — shores & decks are fine
-  if (!isDeepWaterAt(u.x, u.y, state)) {
-    if (u.side === "player") u.embarked = false;
+  if (isTroopWalkableAt(state, u.x, u.y, u)) {
+    if (u.side === "player" && !isWaterAt(u.x, u.y, state)) u.embarked = false;
     return;
   }
-  const cell = battleToGrid(u.x, u.y);
-  if (canEnterWaterCell(state, cell.gx, cell.gy, u)) return;
-  const dry = nearestDryBattlePos(state, u.x, u.y, 16);
+  const dry = nearestDryBattlePos(state, u.x, u.y, 20);
   if (dry) {
     u.x = dry.x;
     u.y = dry.y;
     u.embarked = false;
-    if (
-      u.order === "move" &&
-      u.orderX != null &&
-      isDeepWaterAt(u.orderX, u.orderY ?? u.y, state)
-    ) {
-      const orderCell = battleToGrid(u.orderX, u.orderY ?? u.y);
-      if (!hasBridgeAt(state, orderCell.gx, orderCell.gy) && !hasBoatAt(state, orderCell.gx, orderCell.gy)) {
+    if (u.order === "move" && u.orderX != null && !isTroopWalkableAt(state, u.orderX, u.orderY ?? u.y, u)) {
+      const via = nearestCrossingToward(state, u.x, u.y, u.orderX, u.orderY ?? u.y);
+      if (via) {
+        u.orderX = via.x;
+        u.orderY = via.y;
+      } else {
         u.order = "auto";
         u.orderX = undefined;
         u.orderY = undefined;

@@ -28,49 +28,57 @@ export function battleToGrid(x: number, y: number): { gx: number; gy: number } {
   };
 }
 
-/** Deep river/lake channel grid cell (shores are walkable banks). */
+/** Deep river/lake channel grid cell. */
 export function isDeepWaterCell(gx: number, gy: number, state?: GameState): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   return cellBiome(gx, gy, state?.buildings) === "water";
 }
 
-/** Deep river/lake channel only — shores do not block troops. */
 export function isDeepWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
   return isDeepWaterCell(gx, gy, state);
 }
 
 /**
- * True when standing on a blue river/lake tile from world gen (channel + banks).
- * Use for visuals / orders; movement blocking uses isDeepWaterAt.
+ * True on any blue river/lake tile (channel + banks) from world gen.
+ * Troops may only stand here on a Bridge or Boat deck.
  */
 export function isWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  if (riverCellKeys().has(gy * GRID_W + gx)) return true;
-  const biome = cellBiome(gx, gy, state?.buildings);
-  return biome === "water" || biome === "water_shore";
+  return isRiverGridCell(gx, gy, state);
 }
 
 export function isRiverGridCell(gx: number, gy: number, state?: GameState): boolean {
+  if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   if (riverCellKeys().has(gy * GRID_W + gx)) return true;
   const biome = cellBiome(gx, gy, state?.buildings);
   return biome === "water" || biome === "water_shore";
 }
 
-/** Troops may stand on shores freely; deep water needs Bridge / Boat. */
+/** Any blue tile needs Bridge / Boat — banks look like water and are not for marching. */
 export function canEnterWaterCell(
   state: GameState,
   gx: number,
   gy: number,
-  _unit: BattleUnit,
+  _unit?: BattleUnit,
 ): boolean {
-  if (!isDeepWaterCell(gx, gy, state)) return true;
+  if (!isRiverGridCell(gx, gy, state)) return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
   return false;
 }
 
-/** Snap battle coords onto land, shore, or a Bridge/Boat deck. */
+export function isTroopWalkableAt(
+  state: GameState,
+  x: number,
+  y: number,
+  unit?: BattleUnit,
+): boolean {
+  const { gx, gy } = battleToGrid(x, y);
+  return canEnterWaterCell(state, gx, gy, unit ?? ({ side: "player" } as BattleUnit));
+}
+
+/** Snap onto land or a Bridge/Boat deck — never open blue water. */
 export function nearestDryBattlePos(
   state: GameState,
   x: number,
@@ -85,7 +93,7 @@ export function nearestDryBattlePos(
         const cx = gx + dx;
         const cy = gy + dy;
         if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) continue;
-        if (isDeepWaterCell(cx, cy, state)) {
+        if (isRiverGridCell(cx, cy, state)) {
           if (!hasBridgeAt(state, cx, cy) && !hasBoatAt(state, cx, cy)) continue;
         }
         return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
@@ -156,7 +164,7 @@ export function isBlockedTerrain(
   unit?: BattleUnit,
 ): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  if (!isDeepWaterCell(gx, gy, state)) return false;
+  if (!isRiverGridCell(gx, gy, state)) return false;
   if (!state) return true;
   if (unit) return !canEnterWaterCell(state, gx, gy, unit);
   return !(hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));
