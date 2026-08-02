@@ -192,20 +192,18 @@ export class VillageScene {
       this.root.add(deepMesh);
     }
 
-    // Rivers & lakes — brighter, raised, oversized tiles (sample for FPS)
+    // Rivers & lakes — exact cell size (oversized tiles made land look walkable-in-water)
     if (layout.waterCells.length > 0) {
-      const step = layout.waterCells.length > 2500 ? 2 : 1;
-      const count = Math.ceil(layout.waterCells.length / step);
-      const waterGeo = new THREE.PlaneGeometry(TILE * (1.2 + step * 0.35), TILE * (1.2 + step * 0.35));
+      const count = layout.waterCells.length;
+      const waterGeo = new THREE.PlaneGeometry(TILE * 0.98, TILE * 0.98);
       const waterMat = new THREE.MeshBasicMaterial({
         color: "#3d9ad4",
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.88,
       });
       const waterMesh = new THREE.InstancedMesh(waterGeo, waterMat, count);
       let wi = 0;
-      for (let i = 0; i < layout.waterCells.length; i += step) {
-        const cell = layout.waterCells[i];
+      for (const cell of layout.waterCells) {
         dummy.position.set(cell.gx * TILE + TILE / 2, 0.07, cell.gy * TILE + TILE / 2);
         dummy.rotation.set(-Math.PI / 2, 0, 0);
         dummy.scale.set(1, 1, 1);

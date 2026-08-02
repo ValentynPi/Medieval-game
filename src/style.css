@@ -349,7 +349,8 @@ button:disabled {
 }
 
 .intro-overlay,
-.end-overlay {
+.end-overlay,
+.raid-result {
   position: fixed;
   inset: 0;
   background: rgba(8, 10, 8, 0.82);
@@ -358,6 +359,33 @@ button:disabled {
   justify-content: center;
   z-index: 20;
   padding: 20px;
+}
+
+.raid-result {
+  z-index: 18;
+  background: rgba(8, 10, 8, 0.55);
+  pointer-events: auto;
+}
+
+.raid-result-card {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.raid-result-card h2 {
+  margin: 0 0 8px;
+  font-family: Cinzel, serif;
+  font-size: 1.45rem;
+  color: var(--accent);
+}
+
+.raid-result-card p {
+  color: var(--muted);
+  margin: 0 0 16px;
 }
 
 .intro-card,

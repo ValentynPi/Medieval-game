@@ -41,7 +41,7 @@ import {
   troopVariantForLevel,
   variantUnlockedAt,
 } from "./combat";
-import { biomeAt, buildBlockedReason, cellBiome, getWorldLayout, isBuildableCell, isWaterBiome } from "./worldGen";
+import { biomeAt, buildBlockedReason, cellBiome, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, tickVillagers } from "./villagers";
 import type {
   BattleState,
@@ -688,44 +688,35 @@ export function startRaid(state: GameState): void {
   const keepY = gridToBattleY(keep.y);
   const scale = 1 + wave * 0.1 + keepLevel(state) * 0.05;
 
-  // Water spawn points for river boat assaults
-  const layout = getWorldLayout();
-  const riverSpawns = layout.waterCells
-    .filter((c) => {
-      const bx = gridToBattleX(c.gx);
-      const by = gridToBattleY(c.gy);
-      const d = Math.hypot(bx - keepX, by - keepY);
-      return d > 280 && d < 720;
-    })
-    .slice(0, 80);
-  const boatRaid = riverSpawns.length > 8 && (wave % 2 === 0 || wave >= 3);
-  const boatCount = boatRaid ? Math.ceil(enemyCount * 0.45) : 0;
-
+  // Land assaults only — river-boat spawns hid in fog and froze raids forever
   for (let i = 0; i < enemyCount; i++) {
-    const byBoat = i < boatCount;
-    let x: number;
-    let y: number;
-    if (byBoat) {
-      const cell = riverSpawns[i % riverSpawns.length];
-      x = gridToBattleX(cell.gx) + (Math.random() - 0.5) * 30;
-      y = gridToBattleY(cell.gy) + (Math.random() - 0.5) * 30;
-    } else {
-      const angle = (i / enemyCount) * Math.PI * 2 + Math.random() * 0.4;
-      const dist = 320 + Math.random() * 180;
-      x = keepX + Math.cos(angle) * dist;
-      y = keepY + Math.sin(angle) * dist;
-      // Keep land spawns off water
-      if (isWaterAt(x, y, state)) {
-        x = keepX + Math.cos(angle) * (dist + 80);
-        y = keepY + Math.sin(angle) * (dist + 80);
+    const angle = (i / enemyCount) * Math.PI * 2 + Math.random() * 0.4;
+    const dist = 320 + Math.random() * 180;
+    let x = keepX + Math.cos(angle) * dist;
+    let y = keepY + Math.sin(angle) * dist;
+    if (isWaterAt(x, y, state)) {
+      const dry = nearestDryBattlePos(state, x, y, 24);
+      if (dry) {
+        x = dry.x;
+        y = dry.y;
+      } else {
+        x = keepX + Math.cos(angle) * (dist + 120);
+        y = keepY + Math.sin(angle) * (dist + 120);
       }
     }
     x = Math.max(40, Math.min(BATTLE_W - 40, x));
     y = Math.max(40, Math.min(BATTLE_H - 40, y));
+    if (isWaterAt(x, y, state)) {
+      const dry = nearestDryBattlePos(state, keepX, keepY, 30);
+      if (dry) {
+        x = dry.x + Math.cos(angle) * 40;
+        y = dry.y + Math.sin(angle) * 40;
+      }
+    }
     const roll = Math.random();
     const troop: TroopType = roll < 0.45 ? "infantry" : roll < 0.75 ? "archers" : "cavalry";
     const s = TROOP_STATS[troop];
-    const isBeast = !byBoat && wave >= 3 && i % 8 === 0;
+    const isBeast = wave >= 3 && i % 8 === 0;
     units.push({
       id: uid("u"),
       side: "enemy",
@@ -738,14 +729,14 @@ export function startRaid(state: GameState): void {
       maxHp: s.hp * scale * (isBeast ? 1.6 : 1),
       atk: s.atk * scale,
       range: s.range,
-      speed: s.speed * (byBoat ? 0.7 : 0.85),
+      speed: s.speed * 0.85,
       radius: 12,
       cooldown: Math.random() * 0.5,
       morale: 85,
       fatigue: 0,
       facing: Math.atan2(keepY - y, keepX - x),
       order: "auto",
-      embarked: byBoat,
+      embarked: false,
     });
   }
 
@@ -753,9 +744,8 @@ export function startRaid(state: GameState): void {
     units,
     elapsed: 0,
     outcome: "ongoing",
-    waveLabel: boatRaid
-      ? `Raid ${wave} — River boats landing`
-      : wave >= 4
+    waveLabel:
+      wave >= 4
         ? `Raid ${wave} — Beasts among them`
         : wave >= 2
           ? `Raid ${wave} — Heavier band`
@@ -770,16 +760,12 @@ export function startRaid(state: GameState): void {
     heroSkillUntil: 0,
     casualties: emptyCasualties(),
     keepDamagedThisTick: false,
+    noEnemySightSeconds: 0,
   };
   refreshFogOfWar(state);
   state.mode = "battle";
   state.paused = false;
-  flash(
-    state,
-    boatRaid
-      ? "River assault! Raiders sail in — they leave boats on shore. Cross water only by Bridge or Boat."
-      : "Formations: L line · V wedge · B block · C circle · Q hero skill · Drag to select",
-  );
+  flash(state, "Formations: L line · V wedge · B block · C circle · Q hero skill · Drag to select");
 }
 
 function isPlayerUnit(u: BattleUnit): boolean {
@@ -1052,156 +1038,188 @@ function moveUnit(
   }
 }
 
-export function tickBattle(state: GameState, dt: number): void {
-  const battle = state.battle;
-  if (!battle || battle.outcome !== "ongoing") return;
-  if (state.paused) return;
-
-  dt *= battle.battleSpeed;
-  battle.elapsed += dt;
-  battle.keepDamagedThisTick = false;
-
-  if (state.hero.skillCooldown > 0) {
-    state.hero.skillCooldown = Math.max(0, state.hero.skillCooldown - dt);
+function finishRaidVictory(state: GameState, battle: BattleState): void {
+  for (const u of battle.units) {
+    if (u.side === "enemy" && u.hp > 0) u.hp = 0;
   }
+  battle.outcome = "won";
+  applyRaidCasualties(state, battle);
+  const reward = {
+    wood: 50 + state.raidCount * 22,
+    stone: 35 + state.raidCount * 18,
+    food: 40 + state.raidCount * 18,
+    gold: 45 + state.raidCount * 28,
+  };
+  state.resources.wood += reward.wood;
+  state.resources.stone += reward.stone;
+  state.resources.food += reward.food;
+  state.resources.gold += reward.gold;
+  state.hero.xp += 25 + state.raidCount * 10;
+  levelHero(state);
+  const c = battle.casualties;
+  flash(
+    state,
+    `Raid broken! +${reward.gold}g · Losses: ${c.infantry}i ${c.archers}a ${c.cavalry}c`,
+    5,
+  );
+  if (state.tutorialStep === 2) state.tutorialStep = 3;
+  checkVictory(state);
+}
 
-  const units = battle.units;
-  const heroUnit = units.find((u) => u.kind === "hero" && u.side === "player");
-
-  refreshFogOfWar(state);
-  tickCombatFloats(battle, dt);
-
-  // River / bank without bridge or boat → shove back to land (or drown if trapped)
-  for (const u of units) {
-    if (u.hp <= 0 || u.kind === "keep" || u.kind === "tower" || u.speed <= 0) continue;
-    if (!isWaterAt(u.x, u.y, state)) {
-      if (u.side === "player") u.embarked = false;
-      continue;
-    }
-    const cell = battleToGrid(u.x, u.y);
-    if (canEnterWaterCell(state, cell.gx, cell.gy, u)) continue;
-    const dry = nearestDryBattlePos(state, u.x, u.y, 12);
-    if (dry) {
-      u.x = dry.x;
-      u.y = dry.y;
-      u.embarked = false;
-      if (u.order === "move" && u.orderX != null && isWaterAt(u.orderX, u.orderY ?? u.y, state)) {
-        u.order = "auto";
-        u.orderX = undefined;
-        u.orderY = undefined;
-      }
-      continue;
-    }
-    u.hp = 0;
-    u.routing = true;
-    addCombatFloat(battle, u.x, u.y, "Drowned!", "#6a9ec8");
-    if (u.side === "player" && u.troopType) {
-      battle.casualties[u.troopType] = (battle.casualties[u.troopType] ?? 0) + 1;
-    }
+function ejectFromRiver(state: GameState, u: BattleUnit): void {
+  if (u.hp <= 0 || u.kind === "keep" || u.kind === "tower" || u.speed <= 0) return;
+  if (!isWaterAt(u.x, u.y, state)) {
+    if (u.side === "player") u.embarked = false;
+    return;
   }
-
-  for (const u of units) {
-    if (u.hp <= 0) continue;
-    if (u.kind === "keep") continue;
-
-    u.cooldown = Math.max(0, u.cooldown - dt);
-
-    if (u.routing && u.side === "player" && u.speed > 0) {
-      const keep = units.find((k) => k.kind === "keep");
-      if (keep) {
-        const dx = keep.x - u.x;
-        const dy = keep.y - u.y;
-        const d = Math.hypot(dx, dy) || 1;
-        const terrain = terrainAtBattle(u.x, u.y, state);
-        const spd =
-          terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u) * 1.15;
-        moveUnit(units, u, dx / d, dy / d, dt, spd, state);
-      }
-      continue;
-    }
-
-    if (isFlanked(units, u)) {
-      u.morale = Math.max(0, (u.morale ?? 100) - dt * 6);
-    }
-
-    const target = nearestTarget(u, units);
-    const terrain = terrainAtBattle(u.x, u.y, state);
-    const effectiveRange = u.range * terrain.rangeMult;
-    const canAttack = target && Math.hypot(target.x - u.x, target.y - u.y) <= effectiveRange;
-
-    if (canAttack && u.cooldown <= 0 && u.atk > 0) {
-      let mult = moraleCombatMult(u) * heroAuraMult(heroUnit, u);
-      if (u.troopType && target!.troopType) {
-        mult *= triangleMultiplier(u.troopType, target!.troopType);
-      }
-      mult *= flankingMultiplier(u, target!);
-      const incomingMult = heroSkillDefenseMult(target!, battle.heroSkillUntil, battle.elapsed);
-      const dmg = u.atk * mult * incomingMult * (0.9 + Math.random() * 0.2);
-      target!.hp -= dmg;
-      applyMoraleHit(target!, dmg);
-      addCombatFloat(
-        battle,
-        target!.x,
-        target!.y - 10,
-        `${Math.round(dmg)}`,
-        mult > 1.2 ? "#ffb060" : "#f0e6d2",
-      );
-      u.cooldown = u.kind === "tower" ? 0.7 : u.troopType === "archers" ? 0.85 : 0.55;
-      if (target!.kind === "keep") {
-        state.keepHp = Math.max(0, target!.hp);
-        battle.keepDamagedThisTick = true;
-      }
-      if (target!.hp <= 0 && target!.troopType && target!.side === "player" && target!.kind !== "hero") {
-        battle.casualties[target!.troopType] += 1;
-      }
-      continue;
-    }
-
-    if (u.order === "hold") continue;
-
-    if (u.order === "move" && u.orderX != null && u.orderY != null && u.speed > 0) {
-      const dm = Math.hypot(u.orderX - u.x, u.orderY - u.y);
-      if (dm > 22) {
-        const nx = (u.orderX - u.x) / dm;
-        const ny = (u.orderY - u.y) / dm;
-        const spd =
-          terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
-        moveUnit(units, u, nx, ny, dt, spd, state);
-        continue;
-      }
+  const cell = battleToGrid(u.x, u.y);
+  if (canEnterWaterCell(state, cell.gx, cell.gy, u)) return;
+  const dry = nearestDryBattlePos(state, u.x, u.y, 16);
+  if (dry) {
+    u.x = dry.x;
+    u.y = dry.y;
+    u.embarked = false;
+    if (u.order === "move" && u.orderX != null && isWaterAt(u.orderX, u.orderY ?? u.y, state)) {
       u.order = "auto";
       u.orderX = undefined;
       u.orderY = undefined;
     }
+    return;
+  }
+  u.hp = 0;
+  u.routing = true;
+  if (state.battle) addCombatFloat(state.battle, u.x, u.y, "Drowned!", "#6a9ec8");
+  if (u.side === "player" && u.troopType && state.battle) {
+    state.battle.casualties[u.troopType] = (state.battle.casualties[u.troopType] ?? 0) + 1;
+  }
+}
 
-    if (!target || u.speed <= 0) continue;
+export function tickBattle(state: GameState, dt: number): void {
+  const battle = state.battle;
+  if (!battle || battle.outcome !== "ongoing") return;
 
-    const dist = Math.hypot(target.x - u.x, target.y - u.y);
-    if (dist > effectiveRange) {
-      const nx = (target.x - u.x) / dist;
-      const ny = (target.y - u.y) / dist;
-      const spd =
-        terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
-      moveUnit(units, u, nx, ny, dt, spd, state);
+  const simDt = state.paused ? 0 : dt * battle.battleSpeed;
+  if (!state.paused) {
+    battle.elapsed += simDt;
+    battle.keepDamagedThisTick = false;
+
+    if (state.hero.skillCooldown > 0) {
+      state.hero.skillCooldown = Math.max(0, state.hero.skillCooldown - simDt);
     }
   }
 
-  tickMoraleAndFatigue(units, dt, battle.keepDamagedThisTick);
+  const units = battle.units;
+  const heroUnit = units.find((u) => u.kind === "hero" && u.side === "player");
+  const keepUnit = units.find((u) => u.kind === "keep");
 
-  // Enemy retreat when badly outnumbered and low morale
-  const enemiesAlive = units.filter((u) => u.side === "enemy" && u.hp > 0 && u.speed > 0);
-  const playersAlive = units.filter((u) => u.side === "player" && u.hp > 0 && u.speed > 0);
-  if (enemiesAlive.length > 0 && playersAlive.length > enemiesAlive.length * 1.8) {
-    for (const e of enemiesAlive) {
-      if ((e.morale ?? 100) < 25) {
-        e.order = "move";
-        e.orderX = e.x < BATTLE_W / 2 ? 10 : BATTLE_W - 10;
-        e.orderY = e.y < BATTLE_H / 2 ? 10 : BATTLE_H - 10;
+  refreshFogOfWar(state);
+  if (!state.paused) tickCombatFloats(battle, simDt);
+
+  // Always keep troops off illegal river tiles (even while paused)
+  for (const u of units) ejectFromRiver(state, u);
+
+  if (!state.paused) {
+    for (const u of units) {
+      if (u.hp <= 0) continue;
+      if (u.kind === "keep") continue;
+
+      u.cooldown = Math.max(0, u.cooldown - simDt);
+
+      if (u.routing && u.side === "player" && u.speed > 0) {
+        if (keepUnit) {
+          const dx = keepUnit.x - u.x;
+          const dy = keepUnit.y - u.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const terrain = terrainAtBattle(u.x, u.y, state);
+          const spd =
+            terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u) * 1.15;
+          moveUnit(units, u, dx / d, dy / d, simDt, spd, state);
+        }
+        continue;
+      }
+
+      if (isFlanked(units, u)) {
+        u.morale = Math.max(0, (u.morale ?? 100) - simDt * 6);
+      }
+
+      const target = nearestTarget(u, units);
+      const terrain = terrainAtBattle(u.x, u.y, state);
+      const effectiveRange = u.range * terrain.rangeMult;
+      const canAttack = target && Math.hypot(target.x - u.x, target.y - u.y) <= effectiveRange;
+
+      if (canAttack && u.cooldown <= 0 && u.atk > 0) {
+        let mult = moraleCombatMult(u) * heroAuraMult(heroUnit, u);
+        if (u.troopType && target!.troopType) {
+          mult *= triangleMultiplier(u.troopType, target!.troopType);
+        }
+        mult *= flankingMultiplier(u, target!);
+        const incomingMult = heroSkillDefenseMult(target!, battle.heroSkillUntil, battle.elapsed);
+        const dmg = u.atk * mult * incomingMult * (0.9 + Math.random() * 0.2);
+        target!.hp -= dmg;
+        applyMoraleHit(target!, dmg);
+        addCombatFloat(
+          battle,
+          target!.x,
+          target!.y - 10,
+          `${Math.round(dmg)}`,
+          mult > 1.2 ? "#ffb060" : "#f0e6d2",
+        );
+        u.cooldown = u.kind === "tower" ? 0.7 : u.troopType === "archers" ? 0.85 : 0.55;
+        if (target!.kind === "keep") {
+          state.keepHp = Math.max(0, target!.hp);
+          battle.keepDamagedThisTick = true;
+        }
+        if (target!.hp <= 0 && target!.troopType && target!.side === "player" && target!.kind !== "hero") {
+          battle.casualties[target!.troopType] += 1;
+        }
+        continue;
+      }
+
+      if (u.order === "hold") continue;
+
+      if (u.order === "move" && u.orderX != null && u.orderY != null && u.speed > 0) {
+        const dm = Math.hypot(u.orderX - u.x, u.orderY - u.y);
+        if (dm > 22) {
+          const nx = (u.orderX - u.x) / dm;
+          const ny = (u.orderY - u.y) / dm;
+          const spd =
+            terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
+          moveUnit(units, u, nx, ny, simDt, spd, state);
+          continue;
+        }
+        u.order = "auto";
+        u.orderX = undefined;
+        u.orderY = undefined;
+      }
+
+      if (!target || u.speed <= 0) continue;
+
+      const dist = Math.hypot(target.x - u.x, target.y - u.y);
+      if (dist > effectiveRange) {
+        const nx = (target.x - u.x) / dist;
+        const ny = (target.y - u.y) / dist;
+        const spd =
+          terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
+        moveUnit(units, u, nx, ny, simDt, spd, state);
+      }
+    }
+
+    tickMoraleAndFatigue(units, simDt, battle.keepDamagedThisTick);
+
+    const enemiesAlive = units.filter((u) => u.side === "enemy" && u.hp > 0 && u.speed > 0);
+    const playersAlive = units.filter((u) => u.side === "player" && u.hp > 0 && u.speed > 0);
+    if (enemiesAlive.length > 0 && playersAlive.length > enemiesAlive.length * 1.8) {
+      for (const e of enemiesAlive) {
+        if ((e.morale ?? 100) < 25) {
+          e.routing = true;
+          e.order = "move";
+          e.orderX = e.x < BATTLE_W / 2 ? 10 : BATTLE_W - 10;
+          e.orderY = e.y < BATTLE_H / 2 ? 10 : BATTLE_H - 10;
+        }
       }
     }
   }
 
-  const keepUnit = units.find((u) => u.kind === "keep");
   if (keepUnit) {
     state.keepHp = Math.max(0, keepUnit.hp);
     if (keepUnit.hp <= 0) {
@@ -1213,41 +1231,30 @@ export function tickBattle(state: GameState, dt: number): void {
     }
   }
 
-  // Active threats only — routing / far / stuck boat leftovers must not freeze the raid
-  const activeThreats = units.filter((u) => {
-    if (u.side !== "enemy" || u.hp <= 0 || u.speed <= 0) return false;
-    if (u.routing) return false;
-    if (!keepUnit) return true;
-    const d = Math.hypot(u.x - keepUnit.x, u.y - keepUnit.y);
-    return d < 920;
-  });
+  const livingEnemies = units.filter((u) => u.side === "enemy" && u.hp > 0 && u.speed > 0);
+  const visibleLiving = livingEnemies.filter((u) => battle.visibleEnemyIds.includes(u.id));
+  const fighting = livingEnemies.filter((u) => !u.routing);
+  const nearKeep = keepUnit
+    ? fighting.filter((u) => Math.hypot(u.x - keepUnit.x, u.y - keepUnit.y) < 700)
+    : fighting;
 
-  if (activeThreats.length === 0) {
-    for (const u of units) {
-      if (u.side === "enemy" && u.hp > 0) u.hp = 0;
-    }
-    battle.outcome = "won";
-    applyRaidCasualties(state, battle);
-    const reward = {
-      wood: 50 + state.raidCount * 22,
-      stone: 35 + state.raidCount * 18,
-      food: 40 + state.raidCount * 18,
-      gold: 45 + state.raidCount * 28,
-    };
-    state.resources.wood += reward.wood;
-    state.resources.stone += reward.stone;
-    state.resources.food += reward.food;
-    state.resources.gold += reward.gold;
-    state.hero.xp += 25 + state.raidCount * 10;
-    levelHero(state);
-    const c = battle.casualties;
-    flash(
-      state,
-      `Raid broken! +${reward.gold}g · Losses: ${c.infantry}i ${c.archers}a ${c.cavalry}c`,
-      5,
-    );
-    if (state.tutorialStep === 2) state.tutorialStep = 3;
-    checkVictory(state);
+  // Fog-hidden leftovers must not freeze the raid
+  if (fighting.length > 0 && visibleLiving.length === 0) {
+    battle.noEnemySightSeconds += dt;
+  } else if (nearKeep.length === 0 && fighting.length > 0) {
+    battle.noEnemySightSeconds += dt * 0.75;
+  } else {
+    battle.noEnemySightSeconds = 0;
+  }
+
+  const cleared =
+    livingEnemies.length === 0 ||
+    fighting.length === 0 ||
+    (nearKeep.length === 0 && battle.elapsed > 6) ||
+    (visibleLiving.length === 0 && battle.noEnemySightSeconds >= 1.25);
+
+  if (cleared) {
+    finishRaidVictory(state, battle);
   }
 }
 

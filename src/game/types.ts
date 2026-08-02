@@ -252,4 +252,6 @@ export interface BattleState {
   heroSkillUntil: number;
   casualties: TroopCounts;
   keepDamagedThisTick: boolean;
+  /** Seconds with no living enemy visible — used to end stalled raids */
+  noEnemySightSeconds: number;
 }

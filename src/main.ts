@@ -109,6 +109,13 @@ app.innerHTML = `
       <button class="primary" id="restart-btn">Rule again</button>
     </div>
   </div>
+  <div class="raid-result hidden" id="raid-result">
+    <div class="raid-result-card">
+      <h2 id="raid-result-title">Raid broken</h2>
+      <p id="raid-result-body">The attackers are gone.</p>
+      <button class="primary" id="raid-result-btn">Return to Village</button>
+    </div>
+  </div>
 `;
 
 const stage = document.querySelector<HTMLElement>("#stage")!;
@@ -126,6 +133,17 @@ const dayPill = document.querySelector("#day-pill")!;
 const raidPill = document.querySelector("#raid-pill")!;
 const intro = document.querySelector("#intro")!;
 const ending = document.querySelector("#ending")!;
+const raidResult = document.querySelector("#raid-result")!;
+const raidResultTitle = document.querySelector("#raid-result-title")!;
+const raidResultBody = document.querySelector("#raid-result-body")!;
+const raidResultBtn = document.querySelector("#raid-result-btn")!;
+
+raidResultBtn.addEventListener("click", () => {
+  finishBattleReturn(state);
+  raidResult.classList.add("hidden");
+  persist();
+  renderHud();
+});
 
 let state: GameState = createInitialState();
 let last = performance.now();
@@ -1018,10 +1036,22 @@ function renderHud(): void {
     done.textContent = state.battle.outcome === "won" ? "Return to Village" : "Accept Fate";
     done.addEventListener("click", () => {
       finishBattleReturn(state);
+      raidResult.classList.add("hidden");
       persist();
       renderHud();
     });
     toolbar.appendChild(done);
+    raidResult.classList.remove("hidden");
+    raidResultTitle.textContent =
+      state.battle.outcome === "won" ? "Raid broken!" : "The Keep has fallen";
+    raidResultBody.textContent =
+      state.battle.outcome === "won"
+        ? "No threats remain. Collect your spoils and return to the village."
+        : "Raiders shattered your defenses.";
+    raidResultBtn.textContent =
+      state.battle.outcome === "won" ? "Return to Village" : "Accept Fate";
+  } else {
+    raidResult.classList.add("hidden");
   }
 
   if (state.victory || state.defeat) {

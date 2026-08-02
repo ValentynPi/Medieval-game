@@ -1,7 +1,19 @@
 import { BATTLE_H, BATTLE_W, CELL, GRID_H, GRID_W } from "./config";
 import type { BattleState, BattleUnit, FormationType, GameState, TroopCounts, TroopType, TroopVariant } from "./types";
-import { cellBiome, isWaterBiome } from "./worldGen";
+import { cellBiome, getWorldLayout, isWaterBiome } from "./worldGen";
 import { barracksLevel, hasBoatAt, hasBridgeAt } from "./state";
+
+/** Same cells drawn as blue river tiles in the 3D scene */
+let waterCellKeys: Set<number> | null = null;
+function riverCellKeys(): Set<number> {
+  if (!waterCellKeys) {
+    waterCellKeys = new Set();
+    for (const c of getWorldLayout().waterCells) {
+      waterCellKeys.add(c.gy * GRID_W + c.gx);
+    }
+  }
+  return waterCellKeys;
+}
 
 export interface TerrainMods {
   speedMult: number;
@@ -23,11 +35,18 @@ export function isDeepWaterAt(x: number, y: number, state?: GameState): boolean 
 }
 
 /**
- * Battle treats river channel AND banks as water — matches the blue tiles on the map.
+ * True when standing on a blue river/lake tile from world gen (channel + banks).
  * Crossing needs a Bridge, a Boat dock, or an enemy river-boat (embarked).
  */
 export function isWaterAt(x: number, y: number, state?: GameState): boolean {
   const { gx, gy } = battleToGrid(x, y);
+  if (riverCellKeys().has(gy * GRID_W + gx)) return true;
+  const biome = cellBiome(gx, gy, state?.buildings);
+  return biome === "water" || biome === "water_shore";
+}
+
+export function isRiverGridCell(gx: number, gy: number, state?: GameState): boolean {
+  if (riverCellKeys().has(gy * GRID_W + gx)) return true;
   const biome = cellBiome(gx, gy, state?.buildings);
   return biome === "water" || biome === "water_shore";
 }
@@ -38,12 +57,11 @@ export function canEnterWaterCell(
   gy: number,
   unit: BattleUnit,
 ): boolean {
-  const biome = cellBiome(gx, gy, state.buildings);
-  if (biome !== "water" && biome !== "water_shore") return true;
+  if (!isRiverGridCell(gx, gy, state)) return true;
   if (hasBridgeAt(state, gx, gy)) return true;
   if (hasBoatAt(state, gx, gy)) return true;
-  // Only enemy boat-raiders may sail open water; player troops never “swim”
-  if (unit.embarked && unit.side === "enemy" && biome === "water") return true;
+  // Brief sail only while standing on a boat dock tile (embarked)
+  if (unit.embarked && hasBoatAt(state, gx, gy)) return true;
   return false;
 }
 
@@ -62,9 +80,7 @@ export function nearestDryBattlePos(
         const cx = gx + dx;
         const cy = gy + dy;
         if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) continue;
-        const biome = cellBiome(cx, cy, state.buildings);
-        if (biome === "water" || biome === "water_shore") {
-          // Bridge deck counts as a safe foothold
+        if (isRiverGridCell(cx, cy, state)) {
           if (!hasBridgeAt(state, cx, cy) && !hasBoatAt(state, cx, cy)) continue;
         }
         return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
@@ -108,8 +124,7 @@ export function isBlockedTerrain(
   unit?: BattleUnit,
 ): boolean {
   const { gx, gy } = battleToGrid(x, y);
-  const biome = cellBiome(gx, gy, state?.buildings);
-  if (biome !== "water" && biome !== "water_shore") return false;
+  if (!isRiverGridCell(gx, gy, state)) return false;
   if (!state) return true;
   if (unit) return !canEnterWaterCell(state, gx, gy, unit);
   return !(hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));
