@@ -41,6 +41,7 @@ import {
   variantUnlockedAt,
 } from "./combat";
 import { biomeAt, buildBlockedReason, cellBiome, getWorldLayout, isBuildableCell, isWaterBiome } from "./worldGen";
+import { tickVillagers } from "./villagers";
 import type {
   BattleState,
   BattleUnit,
@@ -136,6 +137,7 @@ export function upkeepPerSecond(state: GameState): number {
 
 export function tickEconomy(state: GameState, dt: number): void {
   if (state.mode !== "village" || state.defeat || state.victory) return;
+  tickVillagers(state, dt);
   const prod = productionPerSecond(state);
   state.resources.wood += prod.wood * dt;
   state.resources.stone += prod.stone * dt;

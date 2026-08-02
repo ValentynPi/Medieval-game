@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CELL, TILE } from "./config";
-import type { BattleUnit, TroopType } from "./types";
+import type { BattleUnit, TroopType, Villager, VillagerJob } from "./types";
 
 function mat(color: string, opts?: { rough?: number; emissive?: string; emInt?: number }) {
   return new THREE.MeshStandardMaterial({
@@ -222,6 +222,94 @@ function buildCavalryMount(unit: BattleUnit): THREE.Group {
   lance.rotation.z = -0.5;
   g.add(lance);
   return g;
+}
+
+function villagerCloth(job: VillagerJob): string {
+  if (job === "woodcutter") return "#6b5340";
+  if (job === "farmer") return "#5a7a3a";
+  if (job === "quarryman") return "#6a6e78";
+  if (job === "miner") return "#4a4a52";
+  if (job === "trader") return "#6a4a7a";
+  return "#5a6a7a";
+}
+
+/** Civilian townsfolk for the village (not combat units) */
+export function createVillagerMesh(v: Villager): THREE.Group {
+  const fake: BattleUnit = {
+    id: v.id,
+    side: "player",
+    kind: "infantry",
+    troopType: "infantry",
+    x: 0,
+    y: 0,
+    hp: 1,
+    maxHp: 1,
+    atk: 0,
+    range: 0,
+    speed: 1,
+    radius: 0.3,
+    cooldown: 0,
+    facing: 0,
+  };
+  const person = buildHumanoid(fake);
+  person.userData.villagerId = v.id;
+  person.userData.lastX = v.x;
+  person.userData.lastZ = v.y;
+  person.scale.setScalar(0.85);
+  // Tag + recolor tunic (torso box ~0.48 tall)
+  person.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !(o.geometry instanceof THREE.BoxGeometry)) return;
+    const h = o.geometry.parameters?.height ?? 0;
+    if (Math.abs(h - 0.48) < 0.05) {
+      o.userData.jobCloth = true;
+      if (o.material instanceof THREE.MeshStandardMaterial) {
+        o.material.color.set(villagerCloth(v.job));
+      }
+    }
+  });
+  // Soft selection ring (toggled in scene)
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.48, 20),
+    new THREE.MeshBasicMaterial({
+      color: "#e8c86a",
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  ring.name = "vil_ring";
+  ring.visible = false;
+  person.add(ring);
+  return person;
+}
+
+export function updateVillagerMesh(
+  mesh: THREE.Group,
+  v: Villager,
+  selected: boolean,
+): void {
+  const gx = v.x * TILE;
+  const gz = v.y * TILE;
+  const prevX = mesh.userData.lastX as number;
+  const prevZ = mesh.userData.lastZ as number;
+  const dx = v.x - prevX;
+  const dz = v.y - prevZ;
+  if (Math.abs(dx) + Math.abs(dz) > 0.02) {
+    mesh.rotation.y = Math.atan2(dx, dz);
+    mesh.userData.lastX = v.x;
+    mesh.userData.lastZ = v.y;
+  }
+  const bob = v.phase === "work" ? Math.sin(v.anim) * 0.04 : Math.abs(Math.sin(v.anim)) * 0.06;
+  mesh.position.set(gx, bob, gz);
+  const ring = mesh.getObjectByName("vil_ring");
+  if (ring) ring.visible = selected;
+  const cloth = villagerCloth(v.job);
+  mesh.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !o.userData.jobCloth) return;
+    if (o.material instanceof THREE.MeshStandardMaterial) o.material.color.set(cloth);
+  });
 }
 
 export function createUnitMesh(unit: BattleUnit): THREE.Group {

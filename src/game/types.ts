@@ -33,6 +33,31 @@ export type FormationType = "line" | "wedge" | "block" | "circle";
 
 export type GameMode = "village" | "battle" | "world" | "intro";
 
+export type VillagerJob =
+  | "idle"
+  | "woodcutter"
+  | "farmer"
+  | "quarryman"
+  | "miner"
+  | "trader";
+
+export interface Villager {
+  id: string;
+  name: string;
+  job: VillagerJob;
+  /** Continuous grid coordinates */
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  phase: "walk" | "work";
+  workTimer: number;
+  anim: number;
+  /** Last assigned workplace cell */
+  workGx: number | null;
+  workGy: number | null;
+}
+
 export type Resources = Record<ResourceId, number>;
 
 export interface BuildingDef {
@@ -180,6 +205,10 @@ export interface GameState {
   selectedCityId: string | null;
   /** World-map camp staged for confirm-march */
   selectedSiteId: string | null;
+  villagers: Villager[];
+  selectedVillagerId: string | null;
+  /** Next map click sets workplace for selected villager */
+  assignWorkplace: boolean;
   tutorialStep: number;
   victory: boolean;
   defeat: boolean;

@@ -37,7 +37,15 @@ import {
   upkeepPerSecond,
   useHeroSkill,
 } from "./game/systems";
-import type { Building, BuildingType, GameState, ResourceId, TroopType } from "./game/types";
+import {
+  JOB_HINTS,
+  JOB_LABELS,
+  selectedVillager,
+  setVillagerJob,
+  setVillagerWorkplace,
+  villagerJobYieldLabel,
+} from "./game/villagers";
+import type { Building, BuildingType, GameState, ResourceId, TroopType, VillagerJob } from "./game/types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -64,7 +72,7 @@ app.innerHTML = `
       </div>
       <div class="toolbar" id="toolbar"></div>
       <div class="legend">
-        <span>Camera: WASD / arrows · right-drag · Shift/Alt-drag · scroll zoom (farther = faster pan)</span>
+        <span>Click townsfolk to assign work · Camera: WASD / arrows · right-drag · scroll zoom</span>
         <span>Infantry &gt; Cavalry &gt; Archers &gt; Infantry</span>
         <span>Raids: drag-select · L/V/B/C formations · Q Ironwall · Shift+1/2/3 speed · Space pause</span>
       </div>
@@ -83,8 +91,8 @@ app.innerHTML = `
       <ul>
         <li>Place farms &amp; camps, upgrade the Keep</li>
         <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
-        <li>Clear 8 camps in order on the World Map</li>
-        <li>Win: all camps cleared + Keep level 4</li>
+        <li>Click townsfolk to assign work — chop wood, farm, quarry, mine, trade</li>
+        <li>Clear 8 camps in order · Win with Keep level 4</li>
       </ul>
       <button class="primary" id="start-btn">Take the throne</button>
       <button id="continue-btn" class="hidden">Continue saved realm</button>
@@ -163,7 +171,7 @@ document.querySelector("#start-btn")!.addEventListener("click", () => {
   bootFresh();
   intro.classList.add("hidden");
   state.mode = "village";
-  flash(state, "Build a Farm or Lumber Camp to feed the realm.");
+  flash(state, "Build farms, then click townsfolk to send them chopping, farming, or mining.");
   persist();
   hudDirty = true;
 });
@@ -276,9 +284,33 @@ canvas.addEventListener("click", (e) => {
   if (e.shiftKey) return;
   if (state.mode !== "village") return;
 
+  const cell = village.pickCell(e.clientX, e.clientY);
+
+  if (state.assignWorkplace && state.selectedVillagerId && cell) {
+    if (setVillagerWorkplace(state, state.selectedVillagerId, cell.x, cell.y)) persist();
+    renderHud();
+    return;
+  }
+
+  const villagerId = village.pickVillager(e.clientX, e.clientY);
+  if (villagerId) {
+    state.selectedVillagerId = villagerId;
+    state.selectedBuildingId = null;
+    state.selectedBuild = null;
+    state.assignWorkplace = false;
+    state.buildRotation = 0;
+    village.setGhost(null, null);
+    const v = state.villagers.find((x) => x.id === villagerId);
+    flash(state, `${v?.name ?? "Villager"} — choose their work on the right, or send them somewhere.`, 4);
+    renderHud();
+    return;
+  }
+
   const pickedId = village.pickBuilding(e.clientX, e.clientY);
   if (pickedId) {
     state.selectedBuildingId = pickedId;
+    state.selectedVillagerId = null;
+    state.assignWorkplace = false;
     state.selectedBuild = null;
     state.buildRotation = 0;
     village.setGhost(null, null);
@@ -290,11 +322,12 @@ canvas.addEventListener("click", (e) => {
     return;
   }
 
-  const cell = village.pickCell(e.clientX, e.clientY);
   if (!cell) return;
   const existing = state.buildings.find((b) => b.x === cell.x && b.y === cell.y);
   if (existing) {
     state.selectedBuildingId = existing.id;
+    state.selectedVillagerId = null;
+    state.assignWorkplace = false;
     state.selectedBuild = null;
     village.setGhost(null, null);
     if (existing.type === "barracks") {
@@ -304,6 +337,8 @@ canvas.addEventListener("click", (e) => {
     return;
   }
   state.selectedBuildingId = null;
+  state.selectedVillagerId = null;
+  state.assignWorkplace = false;
   if (state.selectedBuild) {
     if (placeBuilding(state, state.selectedBuild, cell.x, cell.y)) persist();
   }
@@ -404,12 +439,15 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     state.selectedBuild = null;
+    state.selectedVillagerId = null;
+    state.assignWorkplace = false;
     state.buildRotation = 0;
     village.setGhost(null, null);
     if (state.battle) {
       state.battle.selectedIds = [];
       hudDirty = true;
     }
+    hudDirty = true;
   }
   if (state.mode === "village" && e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey) {
     if (state.selectedBuild) {
@@ -781,6 +819,60 @@ function renderHud(): void {
       `;
     }
   } else {
+  const villager = selectedVillager(state);
+  if (villager) {
+    const jobs: VillagerJob[] = [
+      "woodcutter",
+      "farmer",
+      "quarryman",
+      "miner",
+      "trader",
+      "idle",
+    ];
+    rightPanel.innerHTML = `
+      <h2>${villager.name}</h2>
+      <p class="hint">${villager.phase === "work" ? "Working…" : "Walking…"} · ${JOB_LABELS[villager.job]}</p>
+      <p class="hint">${JOB_HINTS[villager.job]}</p>
+      <div class="stat-row"><span>Yield</span><span>${villagerJobYieldLabel(villager.job)}</span></div>
+      <h2>Assign work</h2>
+      <div class="job-grid" id="job-grid"></div>
+      <button class="primary" id="send-workplace-btn">${
+        state.assignWorkplace ? "Click the map for their workplace…" : "Send to a place…"
+      }</button>
+      <button id="clear-vil-btn">Deselect</button>
+      <p class="hint">Townsfolk walk the village and haul resources when they finish a task.</p>
+    `;
+    const grid = rightPanel.querySelector("#job-grid")!;
+    for (const job of jobs) {
+      const btn = document.createElement("button");
+      btn.className = villager.job === job ? "active" : "";
+      btn.innerHTML = `<strong>${JOB_LABELS[job]}</strong><small>${villagerJobYieldLabel(job)}</small>`;
+      btn.addEventListener("click", () => {
+        setVillagerJob(state, villager.id, job);
+        state.assignWorkplace = false;
+        persist();
+        hudDirty = true;
+        renderHud();
+      });
+      grid.appendChild(btn);
+    }
+    rightPanel.querySelector("#send-workplace-btn")?.addEventListener("click", () => {
+      state.assignWorkplace = !state.assignWorkplace;
+      flash(
+        state,
+        state.assignWorkplace
+          ? `Click forest, farm, quarry, mine, or market for ${villager.name}.`
+          : "Workplace pick cancelled.",
+        3,
+      );
+      renderHud();
+    });
+    rightPanel.querySelector("#clear-vil-btn")?.addEventListener("click", () => {
+      state.selectedVillagerId = null;
+      state.assignWorkplace = false;
+      renderHud();
+    });
+  } else {
   const camp = selectedBarracks(state);
   const repair = repairKeepCost(state);
   const repairLabel =
@@ -814,7 +906,8 @@ function renderHud(): void {
       <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
       <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
       <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
-      <p class="hint">Click your Training Camp (Barracks) to drill troops and split wall vs march.</p>
+      <div class="stat-row"><span>Townsfolk</span><span>${state.villagers.length}</span></div>
+      <p class="hint">Click a person in the village to set their job. Barracks drills troops.</p>
       <button id="repair-btn">${repairLabel}</button>
     `;
   }
@@ -824,6 +917,7 @@ function renderHud(): void {
     persist();
     renderHud();
   });
+  }
   }
 
   toolbar.innerHTML = "";

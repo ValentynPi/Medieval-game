@@ -5,7 +5,8 @@ import { buildMusterField, musterCamp, musterSignature } from "./armyField";
 import { createBuildingMesh, createRock } from "./buildings3d";
 import { isEnemyVisible } from "./combat";
 import { buildForestChunks, updateForestVisibility, type TreeChunk } from "./forests";
-import { createUnitMesh, updateUnitMesh } from "./units3d";
+import { createUnitMesh, createVillagerMesh, updateUnitMesh, updateVillagerMesh } from "./units3d";
+import { JOB_LABELS } from "./villagers";
 import { getWorldLayout } from "./worldGen";
 import type { Building, BuildingType, GameState } from "./types";
 
@@ -23,11 +24,13 @@ export class VillageScene {
   private readonly battleGroup = new THREE.Group();
   private readonly orderMarkerGroup = new THREE.Group();
   private readonly musterFieldGroup = new THREE.Group();
+  private readonly villagersGroup = new THREE.Group();
   private readonly groundPlane: THREE.Mesh;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly buildingMeshes = new Map<string, THREE.Group>();
   private readonly battleMeshes = new Map<string, THREE.Group>();
+  private readonly villagerMeshes = new Map<string, THREE.Group>();
   private readonly floatLabels = new Map<string, CSS2DObject>();
   private readonly hemi: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
@@ -128,6 +131,7 @@ export class VillageScene {
     this.root.add(this.battleGroup);
     this.root.add(this.orderMarkerGroup);
     this.root.add(this.musterFieldGroup);
+    this.root.add(this.villagersGroup);
     this.root.add(this.fieldGroup);
 
     this.groundPlane = this.buildTerrain();
@@ -401,6 +405,25 @@ export class VillageScene {
 
   cellToWorld(gx: number, gy: number): THREE.Vector3 {
     return new THREE.Vector3(gx * TILE, 0, gy * TILE);
+  }
+
+  pickVillager(clientX: number, clientY: number): string | null {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const meshList = [...this.villagerMeshes.values()];
+    if (!meshList.length) return null;
+    const hits = this.raycaster.intersectObjects(meshList, true);
+    for (const hit of hits) {
+      let node: THREE.Object3D | null = hit.object;
+      while (node) {
+        const id = node.userData.villagerId as string | undefined;
+        if (id) return id;
+        node = node.parent;
+      }
+    }
+    return null;
   }
 
   pickBuilding(clientX: number, clientY: number): string | null {
@@ -743,6 +766,49 @@ export class VillageScene {
     }
   }
 
+  syncVillagers(state: GameState): void {
+    const show = state.mode === "village";
+    this.villagersGroup.visible = show;
+    if (!show) return;
+
+    const alive = new Set(state.villagers.map((v) => v.id));
+    for (const [id, mesh] of this.villagerMeshes) {
+      if (!alive.has(id)) {
+        this.villagersGroup.remove(mesh);
+        this.disposeObject(mesh);
+        this.villagerMeshes.delete(id);
+      }
+    }
+
+    for (const v of state.villagers) {
+      let mesh = this.villagerMeshes.get(v.id);
+      if (!mesh) {
+        mesh = createVillagerMesh(v);
+        const label = document.createElement("div");
+        label.className = "vil-label";
+        const css = new CSS2DObject(label);
+        css.position.set(0, 1.7, 0);
+        mesh.add(css);
+        mesh.userData.label = css;
+        this.villagerMeshes.set(v.id, mesh);
+        this.villagersGroup.add(mesh);
+      }
+      updateVillagerMesh(mesh, v, state.selectedVillagerId === v.id);
+      const css = mesh.userData.label as CSS2DObject | undefined;
+      if (css) {
+        const el = css.element as HTMLDivElement;
+        const selected = state.selectedVillagerId === v.id;
+        el.className = `vil-label${selected ? " selected" : ""}${v.phase === "work" ? " working" : ""}`;
+        el.textContent = selected
+          ? `${v.name} · ${JOB_LABELS[v.job]}`
+          : v.phase === "work"
+            ? JOB_LABELS[v.job]
+            : "";
+        el.style.display = selected || v.phase === "work" ? "block" : "none";
+      }
+    }
+  }
+
   syncBuildings(state: GameState): void {
     const sig = state.buildings
       .map(
@@ -938,6 +1004,7 @@ export class VillageScene {
     }
     this.syncBuildings(state);
     this.syncMusterField(state);
+    this.syncVillagers(state);
     this.syncBattle(state);
     this.animateDecor(dt);
     this.renderer.render(this.scene, this.camera);

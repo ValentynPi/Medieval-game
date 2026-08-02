@@ -25,6 +25,7 @@ export interface SavePayload {
   tutorialStep: number;
   victory: boolean;
   defeat: boolean;
+  villagers?: GameState["villagers"];
 }
 
 export function hasSave(): boolean {
@@ -63,6 +64,7 @@ export function saveGame(state: GameState): boolean {
       tutorialStep: state.tutorialStep,
       victory: state.victory,
       defeat: state.defeat,
+      villagers: state.villagers.map((v) => ({ ...v })),
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     return true;
@@ -112,6 +114,17 @@ export function loadGame(): GameState | null {
       ),
       selectedCityId: null,
       selectedSiteId: null,
+      villagers: (data.villagers ?? []).map((v) => ({
+        ...v,
+        x: v.x + ox,
+        y: v.y + oy,
+        tx: v.tx + ox,
+        ty: v.ty + oy,
+        workGx: v.workGx != null ? v.workGx + ox : null,
+        workGy: v.workGy != null ? v.workGy + oy : null,
+      })),
+      selectedVillagerId: null,
+      assignWorkplace: false,
       tutorialStep: data.tutorialStep,
       victory: data.victory,
       defeat: data.defeat,
@@ -120,7 +133,7 @@ export function loadGame(): GameState | null {
       selectedBuild: null,
       selectedBuildingId: null,
       buildRotation: 0,
-      message: `Welcome back — Day ${Math.floor(data.day)}. The Marches sprawl wider.`,
+      message: `Welcome back — Day ${Math.floor(data.day)}. Townsfolk are about their work.`,
       messageTimer: 5,
     };
     refreshKeepHpCap(state);
