@@ -63,7 +63,7 @@ export function flash(state: GameState, text: string, seconds = 4): void {
 }
 
 export function productionPerSecond(state: GameState): Resources {
-  const out: Resources = { wood: 0.12, stone: 0.06, food: 0.15, gold: 0.12 };
+  const out: Resources = { wood: 0.35, stone: 0.2, food: 0.35, gold: 0.15 };
   for (const b of state.buildings) {
     const def = BUILDINGS[b.type];
     if (!def.production) continue;
@@ -74,6 +74,16 @@ export function productionPerSecond(state: GameState): Resources {
       }
       out[key] += amount;
     }
+  }
+  // Working townsfolk add a steady +rate (same idea as building production)
+  for (const v of state.villagers) {
+    if (v.job === "woodcutter") out.wood += v.phase === "work" ? 0.55 : 0.25;
+    else if (v.job === "farmer") out.food += v.phase === "work" ? 0.5 : 0.22;
+    else if (v.job === "quarryman") out.stone += v.phase === "work" ? 0.4 : 0.18;
+    else if (v.job === "miner") {
+      out.stone += 0.15;
+      out.gold += 0.12;
+    } else if (v.job === "trader") out.gold += 0.2;
   }
   return out;
 }

@@ -504,15 +504,12 @@ function renderResources(): void {
   const upkeep = upkeepPerSecond(state);
   const netFood = p.food - upkeep;
   const foodClass = netFood < 0 || r.food < 25 ? "drain" : "";
-  const foodRate =
-    upkeep > 0.01
-      ? `${netFood >= 0 ? "+" : ""}${netFood.toFixed(1)}/s · army −${upkeep.toFixed(1)}`
-      : `+${p.food.toFixed(1)}/s`;
+  const rate = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}/s`;
   resourcesEl.innerHTML = `
-    <div class="res wood" title="Wood only drops when you pay for buildings or training"><b>Wood</b>${fmt(r.wood)}<small>+${p.wood.toFixed(1)}/s</small></div>
-    <div class="res stone"><b>Stone</b>${fmt(r.stone)}<small>+${p.stone.toFixed(1)}/s</small></div>
-    <div class="res food" title="Your troops eat food every second (garrison + field army)"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${foodRate}</small></div>
-    <div class="res gold"><b>Gold</b>${fmt(r.gold)}<small>+${p.gold.toFixed(1)}/s</small></div>
+    <div class="res wood" title="Keep tithes, lumber camps, and woodcutters"><b>Wood</b>${fmt(r.wood)}<small>${rate(p.wood)}</small></div>
+    <div class="res stone" title="Quarries and stonecutters"><b>Stone</b>${fmt(r.stone)}<small>${rate(p.stone)}</small></div>
+    <div class="res food" title="Farms minus a light army ration"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
+    <div class="res gold" title="Keep, markets, and traders"><b>Gold</b>${fmt(r.gold)}<small>${rate(p.gold)}</small></div>
   `;
   dayPill.textContent = `Day ${Math.floor(state.day)} · Keep L${keepLevel(state)}`;
   if (state.mode === "battle") {

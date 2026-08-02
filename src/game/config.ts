@@ -18,11 +18,11 @@ export function gridToBattleY(gy: number): number {
   return gy * CELL + CELL / 2;
 }
 
-/** Food consumed per second per troop in the field + garrison */
+/** Food consumed per second per troop in the field + garrison (kept light so food stays net-positive early) */
 export const FOOD_UPKEEP: Record<TroopType, number> = {
-  infantry: 0.04,
-  archers: 0.035,
-  cavalry: 0.06,
+  infantry: 0.012,
+  archers: 0.01,
+  cavalry: 0.018,
 };
 
 export const EMPTY_COST: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
@@ -35,7 +35,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     maxLevel: 8,
     baseCost: { wood: 80, stone: 120, food: 40, gold: 50 },
     costGrowth: 1.65,
-    production: { gold: 0.35 },
+    production: { gold: 0.35, wood: 0.45, food: 0.55 },
     defense: 40,
     color: "#5c4634",
     roof: "#8b3a2a",
@@ -48,7 +48,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     maxLevel: 6,
     baseCost: { wood: 40, stone: 10, food: 0, gold: 15 },
     costGrowth: 1.45,
-    production: { food: 2.2 },
+    production: { food: 2.6 },
     color: "#6b8f3c",
     roof: "#c4a35a",
     keepRequired: 1,
@@ -60,7 +60,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     maxLevel: 6,
     baseCost: { wood: 20, stone: 15, food: 20, gold: 10 },
     costGrowth: 1.45,
-    production: { wood: 2.0 },
+    production: { wood: 2.4 },
     color: "#7a5c3a",
     roof: "#4a6b3a",
     keepRequired: 1,
@@ -72,7 +72,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     maxLevel: 6,
     baseCost: { wood: 35, stone: 5, food: 25, gold: 20 },
     costGrowth: 1.45,
-    production: { stone: 1.6 },
+    production: { stone: 1.8 },
     color: "#7d7f86",
     roof: "#5a5c62",
     keepRequired: 1,

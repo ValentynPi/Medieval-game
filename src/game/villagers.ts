@@ -54,13 +54,14 @@ export const JOB_HINTS: Record<VillagerJob, string> = {
   builder: "Hired at the Builders Hall — walks to sites and raises buildings.",
 };
 
+/** Small haul bonus when a task finishes (steady income is in productionPerSecond) */
 const WORK_YIELD: Record<VillagerJob, Partial<Resources>> = {
   idle: {},
-  woodcutter: { wood: 2.2 },
-  farmer: { food: 2.4 },
-  quarryman: { stone: 1.8 },
-  miner: { stone: 1.0, gold: 0.45 },
-  trader: { gold: 0.9 },
+  woodcutter: { wood: 1.2 },
+  farmer: { food: 1.2 },
+  quarryman: { stone: 1.0 },
+  miner: { stone: 0.6, gold: 0.3 },
+  trader: { gold: 0.5 },
   builder: {},
 };
 
@@ -665,11 +666,10 @@ export function selectedVillager(state: GameState): Villager | undefined {
 
 export function villagerJobYieldLabel(job: VillagerJob): string {
   if (job === "builder") return "Raises buildings";
-  const y = WORK_YIELD[job];
-  const parts: string[] = [];
-  if (y.wood) parts.push(`+${y.wood} wood`);
-  if (y.stone) parts.push(`+${y.stone} stone`);
-  if (y.food) parts.push(`+${y.food} food`);
-  if (y.gold) parts.push(`+${y.gold} gold`);
-  return parts.length ? `${parts.join(", ")} / haul` : "No yield";
+  if (job === "woodcutter") return "+wood /s while working";
+  if (job === "farmer") return "+food /s while working";
+  if (job === "quarryman") return "+stone /s while working";
+  if (job === "miner") return "+stone & gold /s";
+  if (job === "trader") return "+gold /s";
+  return "Wanders near the Keep";
 }
