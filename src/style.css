@@ -118,6 +118,10 @@ body {
   margin-left: 4px;
 }
 
+.res.food small {
+  white-space: nowrap;
+}
+
 .res.wood b {
   color: var(--wood);
 }

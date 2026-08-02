@@ -330,9 +330,18 @@ export function placeBuilding(
 
   state.resources = pay(state.resources, cost);
   const rot = ((rotation % 4) + 4) % 4;
+  const spent = [
+    cost.wood ? `${cost.wood} wood` : "",
+    cost.stone ? `${cost.stone} stone` : "",
+    cost.food ? `${cost.food} food` : "",
+    cost.gold ? `${cost.gold} gold` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   if (!needsCrew) {
     completeBuilding(state, type, x, y, rot);
+    if (spent) flash(state, `${def.name} — paid ${spent}.`, 3);
     return true;
   }
 
@@ -345,7 +354,7 @@ export function placeBuilding(
     progress: 0,
     builderId: null,
   });
-  flash(state, `${def.name} foundation laid — a builder is on the way.`, 4);
+  flash(state, `${def.name} foundation — paid ${spent}. A builder is on the way.`, 4);
   return true;
 }
 
