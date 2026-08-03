@@ -1,4 +1,5 @@
 import { GRID_H, GRID_W } from "./config";
+import { reconnectAllToKeep } from "./roads";
 import { createInitialState, refreshKeepHpCap } from "./state";
 import type { GameState } from "./types";
 
@@ -171,6 +172,7 @@ export function loadGame(): GameState | null {
         b.span = [{ x: b.x, y: b.y }];
       }
     }
+    reconnectAllToKeep(state);
     return state;
   } catch {
     return null;

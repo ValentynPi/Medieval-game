@@ -383,7 +383,7 @@ function completeBuilding(
     flash(
       state,
       roads > 0
-        ? `Builders finished the Gold Mine — ${roads} road tiles linked.`
+        ? `Builders finished the Gold Mine — road to Keep (${roads}).`
         : "Builders finished the Gold Mine.",
     );
     return;
@@ -422,7 +422,7 @@ function completeBuilding(
       flash(
         state,
         roads > 0
-          ? `Bridge remade — roads linked (${roads} tiles).`
+          ? `Bridge remade — road to Keep (${roads}).`
           : `Timber Bridge remade — ${spanCells.length} tiles shore to shore.`,
         4,
       );
@@ -443,7 +443,7 @@ function completeBuilding(
     flash(
       state,
       roads > 0
-        ? `Bridge finished — ${roads} road tiles linked to shore.`
+        ? `Bridge finished — road to Keep (${roads}).`
         : spanCells.length > 1
           ? `Timber Bridge spans ${spanCells.length} tiles shore to shore.`
           : "Timber Bridge laid — townsfolk can cross on foot.",
@@ -464,7 +464,7 @@ function completeBuilding(
   if (type !== "road") clearRoadsAt(state, x, y);
   state.buildings.push(building);
   const roads = autoConnectRoads(state, type, x, y, undefined, rot);
-  const roadNote = roads > 0 ? ` Roads linked (${roads}).` : "";
+  const roadNote = roads > 0 ? ` Road to Keep (${roads}).` : "";
   if (type === "farm") {
     flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.${roadNote}`);
   } else if (type === "boat") {
@@ -775,7 +775,7 @@ export function moveBuildingTo(state: GameState, id: string, x: number, y: numbe
   flash(
     state,
     roads > 0
-      ? `${BUILDINGS[b.type].name} moved — roads linked (${roads}).`
+      ? `${BUILDINGS[b.type].name} moved — road to Keep (${roads}).`
       : `${BUILDINGS[b.type].name} moved.`,
     4,
   );
