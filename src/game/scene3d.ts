@@ -445,7 +445,8 @@ export class VillageScene {
       let node: THREE.Object3D | null = hit.object;
       while (node) {
         const id = node.userData.buildingId as string | undefined;
-        if (id) return id;
+        const kind = node.userData.buildingType as string | undefined;
+        if (id && kind !== "road") return id;
         node = node.parent;
       }
     }
@@ -972,7 +973,6 @@ export class VillageScene {
             ? Math.PI / 2
             : 0
           : buildingYaw(b.rotation ?? 0);
-      this.refreshLabel(mesh, b, state.selectedBuildingId === b.id);
     }
   }
 
@@ -1000,22 +1000,10 @@ export class VillageScene {
     );
     mesh.userData.key = this.buildingMeshKey(b);
     mesh.userData.buildingId = b.id;
+    mesh.userData.buildingType = b.type;
     mesh.userData.baseScale = mesh.scale.x;
     if (pulse) mesh.userData.pulse = 1;
-    const labelDiv = document.createElement("div");
-    labelDiv.className = "bld-label";
-    const label = new CSS2DObject(labelDiv);
-    label.position.set(0, 2.4, 0);
-    mesh.add(label);
-    mesh.userData.label = label;
     return mesh;
-  }
-
-  private refreshLabel(mesh: THREE.Group, b: Building, selected: boolean): void {
-    const label = mesh.userData.label as CSS2DObject;
-    const el = label.element as HTMLDivElement;
-    el.className = `bld-label${selected ? " selected" : ""}${b.type === "barracks" ? " camp" : ""}`;
-    el.innerHTML = `<span class="lvl">${b.level}</span>`;
   }
 
   syncBattle(state: GameState): void {

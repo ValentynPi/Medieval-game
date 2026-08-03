@@ -1,6 +1,6 @@
 import { GRID_H, GRID_W } from "./config";
 import { hasWaterCrossing } from "./pathfind";
-import { buildingAt, fieldAt, uid } from "./state";
+import { buildingAt, fieldAt, hasRoadAt, uid } from "./state";
 import { biomeAt, hasStandingTimber, isWaterBiome } from "./worldGen";
 import type { BuildingType, GameState } from "./types";
 
@@ -48,10 +48,6 @@ function entranceCell(
   const { dx, dy } = facingDelta(rotation);
   if (type === "farm") return { x: x - dx, y: y - dy };
   return { x: x + dx, y: y + dy };
-}
-
-function hasRoadAt(state: GameState, x: number, y: number): boolean {
-  return state.buildings.some((b) => b.type === "road" && b.x === x && b.y === y);
 }
 
 /** Cells the pathfinder may cross when laying roads (orthogonal only). */

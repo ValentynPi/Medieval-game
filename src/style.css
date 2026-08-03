@@ -567,38 +567,7 @@ button:disabled {
   color: #f0d78c;
 }
 
-/* CSS2D building labels */
-.bld-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  pointer-events: none;
-  transform: translateY(-6px);
-}
-
-.bld-label .lvl {
-  min-width: 22px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: #2a5f9e;
-  border: 1px solid #8eb7e8;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-  font-family: "Source Sans 3", sans-serif;
-}
-
-.bld-label.camp .lvl {
-  background: #6b2f2f;
-  border-color: #c45c4a;
-}
-
-.bld-label.selected.camp .lvl {
-  background: #8b1e1e;
-  border-color: #ffb080;
-}
+/* Building level is shown only in the Selected panel when clicked */
 
 .muster-label {
   padding: 3px 8px;

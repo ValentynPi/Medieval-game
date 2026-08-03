@@ -281,10 +281,20 @@ export function selectedBuildersHall(state: GameState): Building | undefined {
 export function buildingAt(state: GameState, x: number, y: number, ignoreId?: string): Building | undefined {
   return state.buildings.find((b) => {
     if (ignoreId && b.id === ignoreId) return false;
+    if (b.type === "road") return false; // roads are pavement, not selectable structures
     if (b.x === x && b.y === y) return true;
     if (b.type === "bridge" && b.span?.some((c) => c.x === x && c.y === y)) return true;
     return false;
   });
+}
+
+export function hasRoadAt(state: GameState, x: number, y: number): boolean {
+  return state.buildings.some((b) => b.type === "road" && b.x === x && b.y === y);
+}
+
+/** Remove pavement under a new structure so plots stay clean. */
+export function clearRoadsAt(state: GameState, x: number, y: number): void {
+  state.buildings = state.buildings.filter((b) => !(b.type === "road" && b.x === x && b.y === y));
 }
 
 export function fieldAt(state: GameState, x: number, y: number): FieldCell | undefined {

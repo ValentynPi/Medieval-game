@@ -1,9 +1,11 @@
 import { BATTLE_H, BATTLE_W, BUILDINGS, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
 import {
   buildingAt,
+  clearRoadsAt,
   countType,
   fieldArmy,
   fieldAt,
+  hasRoadAt,
   keepLevel,
   refreshKeepHpCap,
   selectedBarracks,
@@ -249,6 +251,10 @@ function canPlaceAt(
     flash(state, "That plot is already claimed.");
     return false;
   }
+  if (type === "road" && hasRoadAt(state, x, y)) {
+    flash(state, "A road already covers this plot.");
+    return false;
+  }
   if (fieldAt(state, x, y) && type !== "farm") {
     const self = ignoreBuildingId
       ? state.buildings.find((b) => b.id === ignoreBuildingId)
@@ -372,6 +378,7 @@ function completeBuilding(
     existing.type = "mine";
     existing.level = 1;
     existing.rotation = rot;
+    clearRoadsAt(state, x, y);
     const roads = autoConnectRoads(state, "mine", x, y, undefined, rot);
     flash(
       state,
@@ -454,6 +461,7 @@ function completeBuilding(
     rotation: rot,
     fields: type === "farm" ? claimFarmFields(state, x, y, rot, 1) : undefined,
   };
+  if (type !== "road") clearRoadsAt(state, x, y);
   state.buildings.push(building);
   const roads = autoConnectRoads(state, type, x, y, undefined, rot);
   const roadNote = roads > 0 ? ` Roads linked (${roads}).` : "";
@@ -683,6 +691,10 @@ export function beginMoveBuilding(state: GameState, id: string): boolean {
   if (state.mode !== "village") return false;
   const b = state.buildings.find((x) => x.id === id);
   if (!b) return false;
+  if (b.type === "road") {
+    flash(state, "Roads are pavement — select a real building to move.");
+    return false;
+  }
   state.movingBuildingId = id;
   state.selectedBuildingId = id;
   state.selectedBuild = null;
@@ -727,9 +739,11 @@ export function moveBuildingTo(state: GameState, id: string, x: number, y: numbe
     if (at?.type === "mountain") {
       state.buildings = state.buildings.filter((o) => o.id !== at.id);
     }
+    clearRoadsAt(state, x, y);
     b.x = x;
     b.y = y;
   } else {
+    clearRoadsAt(state, x, y);
     b.x = x;
     b.y = y;
     b.rotation = state.buildRotation;

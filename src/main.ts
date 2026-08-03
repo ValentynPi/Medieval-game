@@ -444,25 +444,29 @@ canvas.addEventListener("click", (e) => {
 
   const pickedId = village.pickBuilding(e.clientX, e.clientY);
   if (pickedId) {
-    state.selectedBuildingId = pickedId;
-    state.selectedVillagerId = null;
-    state.assignWorkplace = false;
-    state.selectedBuild = null;
-    state.movingBuildingId = null;
-    state.buildRotation = 0;
-    village.setGhost(null, null);
     const picked = state.buildings.find((b) => b.id === pickedId);
-    if (picked?.type === "barracks") {
-      flash(state, "Training camp open — drill recruits on the right.", 3);
-    } else if (picked?.type === "buildersHall") {
-      flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
+    if (picked && picked.type !== "road") {
+      state.selectedBuildingId = pickedId;
+      state.selectedVillagerId = null;
+      state.assignWorkplace = false;
+      state.selectedBuild = null;
+      state.movingBuildingId = null;
+      state.buildRotation = 0;
+      village.setGhost(null, null);
+      if (picked.type === "barracks") {
+        flash(state, "Training camp open — drill recruits on the right.", 3);
+      } else if (picked.type === "buildersHall") {
+        flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
+      }
+      renderHud();
+      return;
     }
-    renderHud();
-    return;
   }
 
   if (!cell) return;
-  const existing = state.buildings.find((b) => b.x === cell.x && b.y === cell.y);
+  const existing = state.buildings.find(
+    (b) => b.type !== "road" && b.x === cell.x && b.y === cell.y,
+  );
   if (existing) {
     state.selectedBuildingId = existing.id;
     state.selectedVillagerId = null;
@@ -934,7 +938,7 @@ function renderHud(): void {
       renderHud();
     });
   } else {
-    selectedBox.innerHTML = `<p class="hint">Click a building to upgrade or move it.</p>`;
+    selectedBox.innerHTML = `<p class="hint">Click a building to see its level and options. Roads are pavement and cannot be selected.</p>`;
   }
   }
 
