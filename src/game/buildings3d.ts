@@ -111,7 +111,11 @@ function addLogPile(group: THREE.Group, x: number, z: number, rows: number): voi
   }
 }
 
-export function createBuildingMesh(type: BuildingType, level: number): THREE.Group {
+export function createBuildingMesh(
+  type: BuildingType,
+  level: number,
+  opts?: { spanLength?: number },
+): THREE.Group {
   const g = new THREE.Group();
   g.name = `bld_${type}`;
   const scale = levelScale(level);
@@ -376,18 +380,60 @@ export function createBuildingMesh(type: BuildingType, level: number): THREE.Gro
       break;
     }
     case "bridge": {
-      const deck = box(1.9, 0.12, 1.1, "#7a6248", 0.35);
+      const cells = Math.max(1, opts?.spanLength ?? 1);
+      const len = cells * 2.0;
+      const width = 1.15 + Math.min(0.25, level * 0.06);
+      const deckH = 0.14;
+      const deckY = 0.42;
+
+      // Continuous deck along local +X (scene rotates for N–S spans)
+      const deck = box(len + 0.15, deckH, width, level >= 2 ? "#8a6e52" : "#7a6248", deckY);
       g.add(deck);
-      const railL = box(1.8, 0.22, 0.08, "#5a4634", 0.5);
-      railL.position.z = 0.28;
-      g.add(railL);
-      const railR = box(1.8, 0.22, 0.08, "#5a4634", 0.5);
-      railR.position.z = -0.28;
-      g.add(railR);
-      for (const sx of [-0.7, 0.7]) {
-        const post = box(0.12, 0.7 + level * 0.1, 0.12, "#4a3a28", 0.35);
-        post.position.x = sx;
-        g.add(post);
+
+      // Plank seams
+      const seams = Math.max(2, cells * 2);
+      for (let i = 0; i < seams; i++) {
+        const t = -len / 2 + ((i + 0.5) / seams) * len;
+        const seam = box(0.06, deckH + 0.02, width * 0.92, "#5a4634", deckY + 0.01);
+        seam.position.x = t;
+        g.add(seam);
+      }
+
+      // Side rails + uprights
+      for (const side of [-1, 1] as const) {
+        const rail = box(len * 0.98, 0.12, 0.07, "#5a4634", deckY + 0.28);
+        rail.position.z = side * (width * 0.42);
+        g.add(rail);
+        const topRail = box(len * 0.98, 0.08, 0.06, "#4a3a28", deckY + 0.48);
+        topRail.position.z = side * (width * 0.42);
+        g.add(topRail);
+        for (let i = 0; i <= cells; i++) {
+          const px = -len / 2 + (i / cells) * len;
+          const post = box(0.1, 0.55 + level * 0.08, 0.1, "#3a2e22", deckY + 0.2);
+          post.position.set(px, 0, side * (width * 0.42));
+          g.add(post);
+        }
+      }
+
+      // Shore abutments / stone piers at ends
+      for (const end of [-1, 1] as const) {
+        const pier = box(0.45, 0.55, width * 0.85, "#6a6870", 0.28);
+        pier.position.x = end * (len / 2 + 0.05);
+        g.add(pier);
+        const cap = box(0.55, 0.12, width * 0.95, "#7a7860", 0.58);
+        cap.position.x = end * (len / 2 + 0.05);
+        g.add(cap);
+      }
+
+      // Mid-span supports for longer crossings
+      if (cells >= 3) {
+        const midCount = Math.floor((cells - 1) / 2);
+        for (let i = 1; i <= midCount; i++) {
+          const px = -len / 2 + (i / (midCount + 1)) * len;
+          const pile = box(0.18, 0.7, 0.18, "#4a4540", 0.2);
+          pile.position.set(px, 0, 0);
+          g.add(pile);
+        }
       }
       break;
     }
@@ -477,10 +523,14 @@ export function createBuildingMesh(type: BuildingType, level: number): THREE.Gro
 }
 
 /** Scaffold / foundation mesh for buildings under construction */
-export function createConstructionMesh(type: BuildingType, progress: number): THREE.Group {
+export function createConstructionMesh(
+  type: BuildingType,
+  progress: number,
+  opts?: { spanLength?: number },
+): THREE.Group {
   const g = new THREE.Group();
   g.name = "construction_site";
-  const ghost = createBuildingMesh(type, 1);
+  const ghost = createBuildingMesh(type, 1, opts);
   ghost.traverse((o) => {
     if (o instanceof THREE.Mesh && o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];

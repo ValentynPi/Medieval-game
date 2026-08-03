@@ -119,12 +119,16 @@ export function nearestCrossingToward(
   let bestVia = maxVia;
   for (const b of state.buildings) {
     if (b.type !== "bridge" && b.type !== "boat") continue;
-    const bx = b.x * CELL + CELL / 2;
-    const by = b.y * CELL + CELL / 2;
-    const via = Math.hypot(bx - fromX, by - fromY) + Math.hypot(towardX - bx, towardY - by);
-    if (via < bestVia) {
-      bestVia = via;
-      best = { x: bx, y: by };
+    const cells =
+      b.type === "bridge" && b.span?.length ? b.span : [{ x: b.x, y: b.y }];
+    for (const c of cells) {
+      const bx = c.x * CELL + CELL / 2;
+      const by = c.y * CELL + CELL / 2;
+      const via = Math.hypot(bx - fromX, by - fromY) + Math.hypot(towardX - bx, towardY - by);
+      if (via < bestVia) {
+        bestVia = via;
+        best = { x: bx, y: by };
+      }
     }
   }
   return best;

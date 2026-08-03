@@ -111,6 +111,8 @@ export interface Building {
   rotation: number;
   /** Crop plots claimed by a farm */
   fields?: FieldCell[];
+  /** Water cells covered by a Bridge (one structure, many tiles) */
+  span?: FieldCell[];
 }
 
 export type CityKind = "trade" | "port";

@@ -47,6 +47,7 @@ export function saveGame(state: GameState): boolean {
       buildings: state.buildings.map((b) => ({
         ...b,
         fields: b.fields?.map((f) => ({ ...f })),
+        span: b.span?.map((c) => ({ ...c })),
       })),
       troops: { ...state.troops },
       garrison: { ...state.garrison },
@@ -106,6 +107,7 @@ export function loadGame(): GameState | null {
         x: b.x + ox,
         y: b.y + oy,
         fields: b.fields?.map((f) => ({ x: f.x + ox, y: f.y + oy })),
+        span: b.span?.map((c) => ({ x: c.x + ox, y: c.y + oy })),
       })),
       troops: data.troops,
       garrison: data.garrison,
@@ -158,10 +160,63 @@ export function loadGame(): GameState | null {
       messageTimer: 5,
     };
     refreshKeepHpCap(state);
+    state.buildings = coalesceLegacyBridges(state.buildings);
     return state;
   } catch {
     return null;
   }
+}
+
+/** Merge old per-tile bridges into one span structure each. */
+function coalesceLegacyBridges(buildings: GameState["buildings"]): GameState["buildings"] {
+  const ready = buildings.filter((b) => b.type !== "bridge" || (b.span && b.span.length > 0));
+  const legacy = buildings.filter((b) => b.type === "bridge" && (!b.span || b.span.length === 0));
+  if (!legacy.length) return buildings;
+
+  const used = new Set<string>();
+  const key = (x: number, y: number) => `${x},${y}`;
+  const byCell = new Map(legacy.map((b) => [key(b.x, b.y), b]));
+
+  const merged: GameState["buildings"] = [];
+  for (const start of legacy) {
+    const sk = key(start.x, start.y);
+    if (used.has(sk)) continue;
+    const cells: { x: number; y: number }[] = [];
+    const queue = [{ x: start.x, y: start.y }];
+    used.add(sk);
+    while (queue.length) {
+      const cur = queue.pop()!;
+      cells.push(cur);
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = cur.x + dx;
+        const ny = cur.y + dy;
+        const nk = key(nx, ny);
+        if (used.has(nk) || !byCell.has(nk)) continue;
+        used.add(nk);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    cells.sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y));
+    const axis: "ns" | "ew" =
+      cells.length > 1 && cells.every((c) => c.x === cells[0].x) ? "ns" : "ew";
+    const mid = cells[Math.floor(cells.length / 2)];
+    const lvl = Math.max(...cells.map((c) => byCell.get(key(c.x, c.y))!.level));
+    merged.push({
+      id: start.id,
+      type: "bridge",
+      level: lvl,
+      x: mid.x,
+      y: mid.y,
+      rotation: axis === "ns" ? 1 : 0,
+      span: cells,
+    });
+  }
+  return [...ready, ...merged];
 }
 
 export function clearSave(): void {

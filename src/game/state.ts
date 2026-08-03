@@ -278,7 +278,11 @@ export function selectedBuildersHall(state: GameState): Building | undefined {
 }
 
 export function buildingAt(state: GameState, x: number, y: number): Building | undefined {
-  return state.buildings.find((b) => b.x === x && b.y === y);
+  return state.buildings.find((b) => {
+    if (b.x === x && b.y === y) return true;
+    if (b.type === "bridge" && b.span?.some((c) => c.x === x && c.y === y)) return true;
+    return false;
+  });
 }
 
 export function fieldAt(state: GameState, x: number, y: number): FieldCell | undefined {
@@ -291,7 +295,11 @@ export function fieldAt(state: GameState, x: number, y: number): FieldCell | und
 }
 
 export function hasBridgeAt(state: GameState, x: number, y: number): boolean {
-  return state.buildings.some((b) => b.type === "bridge" && b.x === x && b.y === y);
+  return state.buildings.some((b) => {
+    if (b.type !== "bridge") return false;
+    if (b.x === x && b.y === y) return true;
+    return !!b.span?.some((c) => c.x === x && c.y === y);
+  });
 }
 
 export function hasBoatAt(state: GameState, x: number, y: number): boolean {

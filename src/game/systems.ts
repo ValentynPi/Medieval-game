@@ -42,7 +42,7 @@ import {
 } from "./combat";
 import { biomeAt, buildBlockedReason, cellBiome, hasStandingTimber, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, repathVillagersAfterCrossing, tickVillagers } from "./villagers";
-import { bridgeSpanCells } from "./pathfind";
+import { bridgeSpanInfo } from "./pathfind";
 import type {
   BattleState,
   BattleUnit,
@@ -251,9 +251,29 @@ function canPlaceAt(
     return false;
   }
   const biome = biomeAt(x, y);
-  if (type === "bridge" || type === "boat") {
+  if (type === "bridge") {
     if (!isWaterBiome(biome)) {
-      flash(state, `${BUILDINGS[type].name}s can only be placed on rivers and lakes.`);
+      flash(state, "Timber Bridges can only be placed on rivers and lakes.");
+      return false;
+    }
+    const info = bridgeSpanInfo(x, y);
+    if (!info) {
+      flash(state, "No dry shore on both sides — pick a narrower crossing.");
+      return false;
+    }
+    for (const cell of info.cells) {
+      if (state.constructionSites.some((s) => s.x === cell.x && s.y === cell.y)) {
+        flash(state, "Builders are already raising something on that span.");
+        return false;
+      }
+      if (buildingAt(state, cell.x, cell.y)) {
+        flash(state, "That crossing is already claimed.");
+        return false;
+      }
+    }
+  } else if (type === "boat") {
+    if (!isWaterBiome(biome)) {
+      flash(state, "Boats can only be placed on rivers and lakes.");
       return false;
     }
   } else if (type === "mine") {
@@ -327,26 +347,27 @@ function completeBuilding(
     return;
   }
   if (type === "bridge") {
-    const span = bridgeSpanCells(x, y);
-    let added = 0;
-    for (const cell of span) {
-      if (buildingAt(state, cell.x, cell.y)) continue;
-      state.buildings.push({
-        id: uid("bld"),
-        type: "bridge",
-        level: 1,
-        x: cell.x,
-        y: cell.y,
-        rotation: rot,
-      });
-      added += 1;
+    const info = bridgeSpanInfo(x, y);
+    if (!info) {
+      flash(state, "Cannot span that water — need shore on both sides.");
+      return;
     }
+    const mid = info.cells[Math.floor(info.cells.length / 2)];
+    state.buildings.push({
+      id: uid("bld"),
+      type: "bridge",
+      level: 1,
+      x: mid.x,
+      y: mid.y,
+      rotation: info.axis === "ns" ? 1 : 0,
+      span: info.cells.map((c) => ({ x: c.x, y: c.y })),
+    });
     repathVillagersAfterCrossing(state);
     flash(
       state,
-      added > 1
-        ? `Bridge spans ${added} tiles — townsfolk will cross here.`
-        : "Bridge laid — townsfolk can cross on foot.",
+      info.cells.length > 1
+        ? `Timber Bridge spans ${info.cells.length} tiles shore to shore.`
+        : "Timber Bridge laid — townsfolk can cross on foot.",
       4,
     );
     return;
@@ -540,6 +561,10 @@ export function rotateBuilding(state: GameState, id: string): boolean {
   if (!b) return false;
   if (b.type === "keep") {
     flash(state, "The Keep cannot be turned.");
+    return false;
+  }
+  if (b.type === "bridge") {
+    flash(state, "The bridge follows the river — it cannot be turned.");
     return false;
   }
   b.rotation = (b.rotation + 1) % 4;

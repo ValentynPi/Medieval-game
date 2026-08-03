@@ -5,6 +5,7 @@ import { buildMusterField, musterCamp, musterSignature } from "./armyField";
 import { createBuildingMesh, createConstructionMesh, createRock } from "./buildings3d";
 import { isEnemyVisible } from "./combat";
 import { buildForestChunks, updateForestVisibility, type TreeChunk } from "./forests";
+import { bridgeSpanInfo } from "./pathfind";
 import { createUnitMesh, createVillagerMesh, updateUnitMesh, updateVillagerMesh } from "./units3d";
 import { JOB_LABELS } from "./villagers";
 import { getWorldLayout } from "./worldGen";
@@ -723,8 +724,40 @@ export class VillageScene {
       this.disposeObject(c);
     }
     if (!type || !cell) return;
-    const mesh = createBuildingMesh(type, 1);
-    mesh.rotation.y = buildingYaw(rotation);
+
+    let spanLen = 1;
+    let yaw = buildingYaw(rotation);
+    let wx = cell.x * TILE;
+    let wz = cell.y * TILE;
+
+    if (type === "bridge") {
+      const info = bridgeSpanInfo(cell.x, cell.y);
+      if (info) {
+        spanLen = info.cells.length;
+        yaw = info.axis === "ns" ? Math.PI / 2 : 0;
+        const ax = info.cells.reduce((s, c) => s + c.x, 0) / info.cells.length;
+        const ay = info.cells.reduce((s, c) => s + c.y, 0) / info.cells.length;
+        wx = ax * TILE;
+        wz = ay * TILE;
+        for (const c of info.cells) {
+          const tile = new THREE.Mesh(
+            new THREE.PlaneGeometry(TILE * 0.9, TILE * 0.9),
+            new THREE.MeshBasicMaterial({
+              color: "#d4af37",
+              transparent: true,
+              opacity: 0.22,
+              side: THREE.DoubleSide,
+            }),
+          );
+          tile.rotation.x = -Math.PI / 2;
+          tile.position.set(c.x * TILE, 0.08, c.y * TILE);
+          this.ghostGroup.add(tile);
+        }
+      }
+    }
+
+    const mesh = createBuildingMesh(type, 1, type === "bridge" ? { spanLength: spanLen } : undefined);
+    mesh.rotation.y = yaw;
     mesh.traverse((o) => {
       if (o instanceof THREE.Mesh && o.material) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -736,8 +769,7 @@ export class VillageScene {
         }
       }
     });
-    const pos = this.cellToWorld(cell.x, cell.y);
-    mesh.position.copy(pos);
+    mesh.position.set(wx, 0, wz);
     this.ghostGroup.add(mesh);
 
     const ring = new THREE.Mesh(
@@ -745,7 +777,7 @@ export class VillageScene {
       new THREE.MeshBasicMaterial({ color: "#d4af37", side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(pos.x, 0.05, pos.z);
+    ring.position.set(wx, 0.05, wz);
     this.ghostGroup.add(ring);
   }
 
@@ -883,7 +915,7 @@ export class VillageScene {
     const sig = state.buildings
       .map(
         (b) =>
-          `${b.id}:${b.type}:${b.level}:${b.x},${b.y}:${b.rotation ?? 0}:${b.fields?.length ?? 0}`,
+          `${b.id}:${b.type}:${b.level}:${b.x},${b.y}:${b.rotation ?? 0}:${b.fields?.length ?? 0}:${b.span?.length ?? 0}`,
       )
       .join("|");
     if (sig === this.signature) {
@@ -909,9 +941,9 @@ export class VillageScene {
         this.buildingMeshes.set(b.id, mesh);
         this.buildingsGroup.add(mesh);
       } else {
-        // rebuild on level change
+        // rebuild on level / span change
         const key = mesh.userData.key as string;
-        const next = `${b.type}:${b.level}`;
+        const next = this.buildingMeshKey(b);
         if (key !== next) {
           this.buildingsGroup.remove(mesh);
           this.disposeObject(mesh);
@@ -920,16 +952,38 @@ export class VillageScene {
           this.buildingsGroup.add(mesh);
         }
       }
-      const pos = this.cellToWorld(b.x, b.y);
+      const pos = this.buildingWorldPos(b);
       mesh.position.copy(pos);
-      mesh.rotation.y = buildingYaw(b.rotation ?? 0);
+      mesh.rotation.y =
+        b.type === "bridge"
+          ? (b.rotation ?? 0) === 1
+            ? Math.PI / 2
+            : 0
+          : buildingYaw(b.rotation ?? 0);
       this.refreshLabel(mesh, b, state.selectedBuildingId === b.id);
     }
   }
 
+  private buildingMeshKey(b: Building): string {
+    return `${b.type}:${b.level}:${b.span?.length ?? 1}`;
+  }
+
+  private buildingWorldPos(b: Building): THREE.Vector3 {
+    if (b.type === "bridge" && b.span?.length) {
+      const ax = b.span.reduce((s, c) => s + c.x, 0) / b.span.length;
+      const ay = b.span.reduce((s, c) => s + c.y, 0) / b.span.length;
+      return new THREE.Vector3(ax * TILE, 0, ay * TILE);
+    }
+    return this.cellToWorld(b.x, b.y);
+  }
+
   private spawnBuilding(b: Building, pulse = false): THREE.Group {
-    const mesh = createBuildingMesh(b.type, b.level);
-    mesh.userData.key = `${b.type}:${b.level}`;
+    const mesh = createBuildingMesh(
+      b.type,
+      b.level,
+      b.type === "bridge" ? { spanLength: b.span?.length ?? 1 } : undefined,
+    );
+    mesh.userData.key = this.buildingMeshKey(b);
     mesh.userData.buildingId = b.id;
     mesh.userData.baseScale = mesh.scale.x;
     if (pulse) mesh.userData.pulse = 1;
