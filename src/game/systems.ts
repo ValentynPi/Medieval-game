@@ -372,7 +372,7 @@ function completeBuilding(
     existing.type = "mine";
     existing.level = 1;
     existing.rotation = rot;
-    const roads = autoConnectRoads(state, "mine", x, y);
+    const roads = autoConnectRoads(state, "mine", x, y, undefined, rot);
     flash(
       state,
       roads > 0
@@ -455,7 +455,7 @@ function completeBuilding(
     fields: type === "farm" ? claimFarmFields(state, x, y, rot, 1) : undefined,
   };
   state.buildings.push(building);
-  const roads = autoConnectRoads(state, type, x, y);
+  const roads = autoConnectRoads(state, type, x, y, undefined, rot);
   const roadNote = roads > 0 ? ` Roads linked (${roads}).` : "";
   if (type === "farm") {
     flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.${roadNote}`);
@@ -754,6 +754,7 @@ export function moveBuildingTo(state: GameState, id: string, x: number, y: numbe
     b.x,
     b.y,
     b.type === "bridge" ? b.span : undefined,
+    b.rotation ?? 0,
   );
   state.movingBuildingId = null;
   state.selectedBuildingId = b.id;
