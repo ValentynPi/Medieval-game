@@ -1,4 +1,5 @@
 import { GRID_H, GRID_W } from "./config";
+import { hasRoadAt } from "./state";
 import { biomeAt, cellBiome, isWaterBiome } from "./worldGen";
 import type { GameState } from "./types";
 
@@ -217,12 +218,10 @@ export function findPath(
       const stepCost = dx !== 0 && dy !== 0 ? 1.414 : 1;
       // Prefer roads and bridges so townsfolk funnel across crossings
       const biome = cellBiome(nx, ny, state.buildings, state.clearedForest);
-      const onBridge = state.buildings.some(
-        (b) => (b.type === "bridge" || b.type === "boat") && buildingCovers(b, nx, ny),
-      );
+      const onBridge = hasWaterCrossing(state, nx, ny);
       const terrain = onBridge
         ? 0.55
-        : biome === "path" || state.buildings.some((b) => b.x === nx && b.y === ny && b.type === "road")
+        : biome === "path" || hasRoadAt(state, nx, ny)
           ? 0.82
           : biome === "deep_forest"
             ? 1.35

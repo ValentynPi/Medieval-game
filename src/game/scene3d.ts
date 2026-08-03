@@ -925,17 +925,17 @@ export class VillageScene {
   }
 
   syncBuildings(state: GameState): void {
-    const sig = state.buildings
-      .map(
-        (b) =>
-          `${b.id}:${b.type}:${b.level}:${b.x},${b.y}:${b.rotation ?? 0}:${b.fields?.length ?? 0}:${b.span?.length ?? 0}`,
-      )
-      .join("|");
-    if (sig === this.signature) {
-      this.animateDecor(0.016);
-      return;
+    // Cheap numeric fingerprint — avoid giant string joins over every road tile each frame
+    let sig = state.buildings.length * 2654435761;
+    for (const b of state.buildings) {
+      sig = (sig ^ ((b.x + 1) * 73856093) ^ ((b.y + 1) * 19349663) ^ (b.level * 83492791)) | 0;
+      if (b.type !== "road") {
+        sig = (sig * 31 + b.type.charCodeAt(0) + (b.rotation ?? 0) * 17 + (b.fields?.length ?? 0) * 13) | 0;
+      }
     }
-    this.signature = sig;
+    const sigStr = String(sig);
+    if (sigStr === this.signature) return;
+    this.signature = sigStr;
     this.syncFarmFields(state);
 
     const alive = new Set(state.buildings.map((b) => b.id));
@@ -954,7 +954,6 @@ export class VillageScene {
         this.buildingMeshes.set(b.id, mesh);
         this.buildingsGroup.add(mesh);
       } else {
-        // rebuild on level / span change
         const key = mesh.userData.key as string;
         const next = this.buildingMeshKey(b);
         if (key !== next) {
@@ -1086,15 +1085,17 @@ export class VillageScene {
 
   private animateDecor(dt: number): void {
     for (const mesh of this.buildingMeshes.values()) {
+      const kind = mesh.userData.buildingType as string | undefined;
       const pulse = mesh.userData.pulse as number | undefined;
       if (pulse && pulse > 0) {
         mesh.userData.pulse = Math.max(0, pulse - dt * 2.5);
         const base = (mesh.userData.baseScale as number) ?? 1;
         mesh.scale.setScalar(base * (1 + pulse * 0.18));
       }
-      mesh.traverse((o) => {
-        if (o.name === "mill_blades") o.rotation.z += dt * 1.2;
-      });
+      // Only farms have mill blades — skip roads and other meshes
+      if (kind !== "farm") continue;
+      const blades = mesh.getObjectByName("mill_blades");
+      if (blades) blades.rotation.z += dt * 1.2;
     }
   }
 

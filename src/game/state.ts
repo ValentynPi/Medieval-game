@@ -1,4 +1,5 @@
 import { BUILDINGS, GRID_H, GRID_W } from "./config";
+import { hasRoadAtFast, invalidateSpatialIndex, structureAtFast } from "./spatial";
 import type { Building, FieldCell, GameState, TradeCity, WorldSite } from "./types";
 
 let nextId = 1000;
@@ -279,22 +280,21 @@ export function selectedBuildersHall(state: GameState): Building | undefined {
 }
 
 export function buildingAt(state: GameState, x: number, y: number, ignoreId?: string): Building | undefined {
-  return state.buildings.find((b) => {
-    if (ignoreId && b.id === ignoreId) return false;
-    if (b.type === "road") return false; // roads are pavement, not selectable structures
-    if (b.x === x && b.y === y) return true;
-    if (b.type === "bridge" && b.span?.some((c) => c.x === x && c.y === y)) return true;
-    return false;
-  });
+  const hit = structureAtFast(state, x, y);
+  if (!hit) return undefined;
+  if (ignoreId && hit.id === ignoreId) return undefined;
+  return hit;
 }
 
 export function hasRoadAt(state: GameState, x: number, y: number): boolean {
-  return state.buildings.some((b) => b.type === "road" && b.x === x && b.y === y);
+  return hasRoadAtFast(state, x, y);
 }
 
 /** Remove pavement under a new structure so plots stay clean. */
 export function clearRoadsAt(state: GameState, x: number, y: number): void {
+  const before = state.buildings.length;
   state.buildings = state.buildings.filter((b) => !(b.type === "road" && b.x === x && b.y === y));
+  if (state.buildings.length !== before) invalidateSpatialIndex();
 }
 
 export function fieldAt(state: GameState, x: number, y: number): FieldCell | undefined {
