@@ -1014,9 +1014,8 @@ export class VillageScene {
   private refreshLabel(mesh: THREE.Group, b: Building, selected: boolean): void {
     const label = mesh.userData.label as CSS2DObject;
     const el = label.element as HTMLDivElement;
-    const canUpgrade = b.level < 8;
     el.className = `bld-label${selected ? " selected" : ""}${b.type === "barracks" ? " camp" : ""}`;
-    el.innerHTML = `<span class="lvl">${b.level}</span>${b.type === "barracks" ? '<span class="up">⚔</span>' : canUpgrade ? '<span class="up">▲</span>' : ""}`;
+    el.innerHTML = `<span class="lvl">${b.level}</span>`;
   }
 
   syncBattle(state: GameState): void {
