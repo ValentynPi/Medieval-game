@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { TILE } from "./config";
-import { selectedBarracks } from "./state";
+import { selectedBarracks, hasBridgeAt, hasBoatAt } from "./state";
 import { createUnitMesh } from "./units3d";
+import { biomeAt, isWaterBiome } from "./worldGen";
 import type { BattleUnit, Building, GameState, TroopType } from "./types";
 
 const MAX_PER_TYPE = 12;
@@ -19,16 +20,39 @@ export function musterSignature(state: GameState): string {
   return `${camp.id}:${camp.x},${camp.y}:${camp.rotation ?? 0}:${t.infantry},${t.archers},${t.cavalry}:${g.infantry},${g.archers},${g.cavalry}:${state.selectedBuildingId ?? ""}`;
 }
 
-export function musterAnchor(camp: Building): { x: number; z: number; facing: number } {
+export function musterAnchor(camp: Building, state?: GameState): { x: number; z: number; facing: number } {
   const facing = (camp.rotation ?? 0) * (Math.PI / 2);
   const cx = camp.x * TILE + TILE / 2;
   const cz = camp.y * TILE + TILE / 2;
-  const dist = TILE * 2.4;
-  return {
-    x: cx + Math.sin(facing) * dist,
-    z: cz + Math.cos(facing) * dist,
-    facing,
-  };
+  const candidates = [2.4, 3.2, 1.6, 4.0, -2.4, -3.2];
+  for (const distTiles of candidates) {
+    const dist = TILE * distTiles;
+    const x = cx + Math.sin(facing) * dist;
+    const z = cz + Math.cos(facing) * dist;
+    const gx = Math.floor(x / TILE);
+    const gy = Math.floor(z / TILE);
+    const wet = isWaterBiome(biomeAt(gx, gy));
+    const crossing =
+      !!state && (hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy));
+    if (!wet || crossing) return { x, z, facing };
+  }
+  return { x: cx, z: cz, facing };
+}
+
+function dryMusterPoint(
+  state: GameState,
+  x: number,
+  z: number,
+  camp: Building,
+): { x: number; z: number } {
+  const gx = Math.floor(x / TILE);
+  const gy = Math.floor(z / TILE);
+  const wet = isWaterBiome(biomeAt(gx, gy));
+  if (!wet || hasBridgeAt(state, gx, gy) || hasBoatAt(state, gx, gy)) {
+    return { x, z };
+  }
+  const anchor = musterAnchor(camp, state);
+  return { x: anchor.x, z: anchor.z };
 }
 
 function paradeUnit(type: TroopType, id: string): BattleUnit {
@@ -64,7 +88,7 @@ export function buildMusterField(
   camp: Building,
   highlighted: boolean,
 ): void {
-  const anchor = musterAnchor(camp);
+  const anchor = musterAnchor(camp, state);
   const facing = anchor.facing;
 
   const ground = new THREE.Mesh(
@@ -141,9 +165,10 @@ export function buildMusterField(
       const depth = Math.floor(i / 6);
       const lx = (col - 2.5) * 0.52;
       const lz = section.row - depth * 0.32;
-      const wx = anchor.x + lx * Math.cos(facing) - lz * Math.sin(facing);
-      const wz = anchor.z + lx * Math.sin(facing) + lz * Math.cos(facing);
-      mesh.position.set(wx, 0, wz);
+      const wx0 = anchor.x + lx * Math.cos(facing) - lz * Math.sin(facing);
+      const wz0 = anchor.z + lx * Math.sin(facing) + lz * Math.cos(facing);
+      const dry = dryMusterPoint(state, wx0, wz0, camp);
+      mesh.position.set(dry.x, 0, dry.z);
       mesh.rotation.y = facing + Math.PI;
       mesh.traverse((o) => {
         if (o instanceof THREE.Mesh && o.name === "hp_bg") o.visible = false;

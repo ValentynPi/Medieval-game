@@ -528,12 +528,16 @@ export class VillageScene {
     this.selectBoxEl.classList.add("hidden");
   }
 
-  private syncCombatFloats(state: GameState): void {
+  private clearCombatFloats(): void {
     for (const [, label] of this.floatLabels) {
       this.battleGroup.remove(label);
       label.element.remove();
     }
     this.floatLabels.clear();
+  }
+
+  private syncCombatFloats(state: GameState): void {
+    this.clearCombatFloats();
 
     const battle = state.battle;
     if (!battle) return;
@@ -548,6 +552,24 @@ export class VillageScene {
       this.floatLabels.set(`f${i}`, label);
       this.battleGroup.add(label);
     });
+  }
+
+  /** Drop leftover battle overlays when starting a new realm. */
+  resetBattleOverlay(): void {
+    for (const [, m] of this.battleMeshes) {
+      this.battleGroup.remove(m);
+      this.disposeObject(m);
+    }
+    this.battleMeshes.clear();
+    this.clearCombatFloats();
+    // Orphaned CSS2D nodes from older sessions
+    document.querySelectorAll(".combat-float").forEach((el) => el.remove());
+    while (this.orderMarkerGroup.children.length) {
+      const c = this.orderMarkerGroup.children[0];
+      this.orderMarkerGroup.remove(c);
+      this.disposeObject(c);
+    }
+    this.minimapCanvas.classList.add("hidden");
   }
 
   private ensureMinimapBiome(w: number, h: number): HTMLCanvasElement {
@@ -931,7 +953,9 @@ export class VillageScene {
         this.disposeObject(m);
       }
       this.battleMeshes.clear();
+      this.clearCombatFloats();
       this.syncOrderMarker(state);
+      this.drawMinimap(state);
       return;
     }
 

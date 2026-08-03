@@ -253,7 +253,9 @@ function bootFresh(): void {
   clearSave();
   intro.classList.remove("hidden");
   ending.classList.add("hidden");
+  raidResult.classList.add("hidden");
   village.setGhost(null, null);
+  village.resetBattleOverlay();
   hudDirty = true;
 }
 

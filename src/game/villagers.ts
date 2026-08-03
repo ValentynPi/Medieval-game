@@ -618,23 +618,35 @@ function drownUnsafeVillagers(state: GameState): void {
   for (const v of state.villagers) {
     const gx = Math.floor(v.x);
     const gy = Math.floor(v.y);
-    if (isDrowningCell(state, gx, gy)) {
-      drowned += 1;
-      lastName = v.name;
-      if (v.siteId) {
-        const site = state.constructionSites.find((s) => s.id === v.siteId);
-        if (site) site.builderId = null;
-      }
-      if (state.selectedVillagerId === v.id) {
-        state.selectedVillagerId = null;
-        state.assignWorkplace = false;
-      }
+    if (!isDrowningCell(state, gx, gy)) {
+      kept.push(v);
       continue;
     }
-    kept.push(v);
+    // Prefer shove onto dry land over instant drown
+    const land = nearestWalkable(state, v.x, v.y, 16);
+    if (land) {
+      v.x = land.x + 0.5;
+      v.y = land.y + 0.5;
+      v.path = [];
+      v.pathI = 0;
+      v.tx = v.x;
+      v.ty = v.y;
+      kept.push(v);
+      continue;
+    }
+    drowned += 1;
+    lastName = v.name;
+    if (v.siteId) {
+      const site = state.constructionSites.find((s) => s.id === v.siteId);
+      if (site) site.builderId = null;
+    }
+    if (state.selectedVillagerId === v.id) {
+      state.selectedVillagerId = null;
+      state.assignWorkplace = false;
+    }
   }
+  state.villagers = kept;
   if (drowned > 0) {
-    state.villagers = kept;
     tell(
       state,
       drowned === 1
