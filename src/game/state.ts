@@ -244,6 +244,7 @@ export function createInitialState(): GameState {
     selectedVillagerId: null,
     assignWorkplace: false,
     constructionSites: [],
+    clearedForest: [],
     tutorialStep: 0,
     victory: false,
     defeat: false,

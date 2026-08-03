@@ -27,6 +27,7 @@ export interface SavePayload {
   defeat: boolean;
   villagers?: GameState["villagers"];
   constructionSites?: GameState["constructionSites"];
+  clearedForest?: number[];
 }
 
 export function hasSave(): boolean {
@@ -70,6 +71,7 @@ export function saveGame(state: GameState): boolean {
         path: v.path.map((p) => ({ ...p })),
       })),
       constructionSites: state.constructionSites.map((s) => ({ ...s })),
+      clearedForest: [...state.clearedForest],
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     return true;
@@ -141,6 +143,7 @@ export function loadGame(): GameState | null {
         builderId: null,
         progress: s.progress ?? 0,
       })),
+      clearedForest: data.clearedForest ?? [],
       selectedVillagerId: null,
       assignWorkplace: false,
       tutorialStep: data.tutorialStep,

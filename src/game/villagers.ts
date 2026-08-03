@@ -1,7 +1,7 @@
 import { GRID_H, GRID_W, HIRE_BUILDER_COST, canAfford, pay } from "./config";
 import { findPath, isDrowningCell, isFootWalkable, nearestWalkable } from "./pathfind";
 import { keepLevel, uid } from "./state";
-import { cellBiome } from "./worldGen";
+import { cellBiome, forestCellKey, hasStandingTimber } from "./worldGen";
 import type {
   ConstructionSite,
   GameState,
@@ -46,7 +46,7 @@ export const JOB_LABELS: Record<VillagerJob, string> = {
 
 export const JOB_HINTS: Record<VillagerJob, string> = {
   idle: "Strolls near the Keep — open water drowns them (Bridge or Boat only).",
-  woodcutter: "Must work at a Lumber Camp or in the forest to earn wood.",
+  woodcutter: "Must work forest plots to clear trees (and earn wood) before you can build there.",
   farmer: "Must work a Farm or its fields to earn food.",
   quarryman: "Must work a Quarry or rocky ground to earn stone.",
   miner: "Must work a Gold Mine to earn gold and stone.",
@@ -219,7 +219,7 @@ function scoreSite(
   fromY: number,
 ): number {
   if (!isFootWalkable(state, gx, gy)) return -1;
-  const biome = cellBiome(gx, gy, state.buildings);
+  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
   const b = state.buildings.find((x) => x.x === gx && x.y === gy);
   let ok = false;
   if (job === "woodcutter") {
@@ -378,7 +378,7 @@ export function setVillagerWorkplace(
     return false;
   }
   if (v.job === "idle") {
-    const biome = cellBiome(gx, gy, state.buildings);
+    const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
     const b = state.buildings.find((x) => x.x === gx && x.y === gy);
     if (b?.type === "farm" || state.buildings.some((f) => f.fields?.some((c) => c.x === gx && c.y === gy))) {
       v.job = "farmer";
@@ -533,18 +533,33 @@ function deliverWork(state: GameState, v: Villager): void {
     const atLumber = state.buildings.some(
       (b) => b.type === "lumber" && b.x === v.workGx && b.y === v.workGy,
     );
-    const biome = cellBiome(v.workGx, v.workGy, state.buildings);
+    const biome = cellBiome(v.workGx, v.workGy, state.buildings, state.clearedForest);
     const inWoods =
       biome === "forest" ||
       biome === "deep_forest" ||
       state.buildings.some((b) => b.type === "forest" && b.x === v.workGx && b.y === v.workGy);
     if (atLumber) yieldAmt.wood = (yieldAmt.wood ?? 0) * 1.35;
-    else if (inWoods) yieldAmt.wood = (yieldAmt.wood ?? 0) * 1.15;
-    else yieldAmt.wood = (yieldAmt.wood ?? 0) * 0.35; // not actually at trees
+    else if (inWoods) {
+      yieldAmt.wood = (yieldAmt.wood ?? 0) * 1.15;
+      // Fell the plot so buildings can be placed here afterward
+      if (clearTimberAt(state, v.workGx, v.workGy)) {
+        tell(state, `${v.name} cleared a wooded plot — ready to build.`, 2);
+      }
+    } else yieldAmt.wood = (yieldAmt.wood ?? 0) * 0.35; // not actually at trees
   }
   for (const key of Object.keys(yieldAmt) as (keyof Resources)[]) {
     state.resources[key] += yieldAmt[key] ?? 0;
   }
+}
+
+/** Remove standing trees from a cell (natural woods + planted forest plots). */
+export function clearTimberAt(state: GameState, gx: number, gy: number): boolean {
+  if (!hasStandingTimber(state, gx, gy)) return false;
+  const key = forestCellKey(gx, gy);
+  if (!state.clearedForest.includes(key)) state.clearedForest.push(key);
+  // Remove player-planted forest marker on this cell
+  state.buildings = state.buildings.filter((b) => !(b.type === "forest" && b.x === gx && b.y === gy));
+  return true;
 }
 
 function claimConstruction(state: GameState, v: Villager): ConstructionSite | null {

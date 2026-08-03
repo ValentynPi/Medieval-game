@@ -57,6 +57,8 @@ export class VillageScene {
   private musterSig = "";
   private minimapBiome: HTMLCanvasElement | null = null;
   private treeChunks: TreeChunk[] = [];
+  private forestGroup: THREE.Group | null = null;
+  private forestClearedSig = -1;
   private forestCullAcc = 0;
   private readonly canvas: HTMLCanvasElement;
   private readonly host: HTMLElement;
@@ -239,8 +241,10 @@ export class VillageScene {
 
     // Dense forests: chunked InstancedMeshes — only chunks near the camera draw
     if (layout.trees.length > 0) {
-      const forest = buildForestChunks(layout.trees);
+      const forest = buildForestChunks(layout.trees, []);
       this.treeChunks = forest.chunks;
+      this.forestGroup = forest.group;
+      this.forestClearedSig = 0;
       this.root.add(forest.group);
       updateForestVisibility(this.treeChunks, this.target.x, this.target.z);
     }
@@ -1059,6 +1063,26 @@ export class VillageScene {
     );
   }
 
+  private syncClearedForest(state: GameState): void {
+    const sig = state.clearedForest.length;
+    if (sig === this.forestClearedSig) return;
+    this.forestClearedSig = sig;
+    const layout = getWorldLayout();
+    if (!layout.trees.length) return;
+
+    if (this.forestGroup) {
+      this.root.remove(this.forestGroup);
+      this.disposeObject(this.forestGroup);
+      this.forestGroup = null;
+      this.treeChunks = [];
+    }
+    const forest = buildForestChunks(layout.trees, state.clearedForest);
+    this.treeChunks = forest.chunks;
+    this.forestGroup = forest.group;
+    this.root.add(forest.group);
+    updateForestVisibility(this.treeChunks, this.target.x, this.target.z);
+  }
+
   render(state: GameState, dt: number): void {
     // Raids keep daylight — night is not tied to combat
     this.setNight(false);
@@ -1070,6 +1094,7 @@ export class VillageScene {
       const reach = 70 + this.camOffset.y * 0.55;
       updateForestVisibility(this.treeChunks, this.target.x, this.target.z, reach);
     }
+    this.syncClearedForest(state);
     this.syncBuildings(state);
     this.syncMusterField(state);
     this.syncConstructionSites(state);

@@ -31,7 +31,7 @@ export function battleToGrid(x: number, y: number): { gx: number; gy: number } {
 /** Deep river/lake channel grid cell. */
 export function isDeepWaterCell(gx: number, gy: number, state?: GameState): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
-  return cellBiome(gx, gy, state?.buildings) === "water";
+  return cellBiome(gx, gy, state?.buildings, state?.clearedForest) === "water";
 }
 
 export function isDeepWaterAt(x: number, y: number, state?: GameState): boolean {
@@ -51,7 +51,7 @@ export function isWaterAt(x: number, y: number, state?: GameState): boolean {
 export function isRiverGridCell(gx: number, gy: number, state?: GameState): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
   if (riverCellKeys().has(gy * GRID_W + gx)) return true;
-  const biome = cellBiome(gx, gy, state?.buildings);
+  const biome = cellBiome(gx, gy, state?.buildings, state?.clearedForest);
   return biome === "water" || biome === "water_shore";
 }
 
@@ -299,7 +299,7 @@ export function setTroopMarch(
 
 export function terrainAtBattle(x: number, y: number, state?: GameState): TerrainMods {
   const { gx, gy } = battleToGrid(x, y);
-  const biome = cellBiome(gx, gy, state?.buildings);
+  const biome = cellBiome(gx, gy, state?.buildings, state?.clearedForest);
   if (state && isWaterBiome(biome)) {
     if (hasBridgeAt(state, gx, gy)) return { speedMult: 1.05, rangeMult: 1, label: "Bridge" };
     if (hasBoatAt(state, gx, gy)) return { speedMult: 0.9, rangeMult: 1, label: "Boat dock" };

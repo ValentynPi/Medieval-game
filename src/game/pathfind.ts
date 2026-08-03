@@ -58,7 +58,7 @@ export function bridgeSpanCells(gx: number, gy: number): { x: number; y: number 
  */
 export function isFootWalkable(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
-  const biome = cellBiome(gx, gy, state.buildings);
+  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
   if (isWaterBiome(biome)) return hasWaterCrossing(state, gx, gy);
   return true;
 }
@@ -66,7 +66,7 @@ export function isFootWalkable(state: GameState, gx: number, gy: number): boolea
 /** Blue tiles without Bridge/Boat — townsfolk must leave or drown. */
 export function isDrowningCell(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
-  const biome = cellBiome(gx, gy, state.buildings);
+  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
   if (!isWaterBiome(biome)) return false;
   return !hasWaterCrossing(state, gx, gy);
 }
@@ -187,7 +187,7 @@ export function findPath(
       }
       const stepCost = dx !== 0 && dy !== 0 ? 1.414 : 1;
       // Prefer roads and bridges so townsfolk funnel across crossings
-      const biome = cellBiome(nx, ny, state.buildings);
+      const biome = cellBiome(nx, ny, state.buildings, state.clearedForest);
       const onBridge = state.buildings.some(
         (b) => b.x === nx && b.y === ny && (b.type === "bridge" || b.type === "boat"),
       );

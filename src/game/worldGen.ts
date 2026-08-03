@@ -13,6 +13,8 @@ export type Biome =
 export interface TreeSlot {
   x: number;
   z: number;
+  gx: number;
+  gy: number;
   scale: number;
   variant: 0 | 1 | 2;
   rotation: number;
@@ -248,9 +250,10 @@ export function generateWorldLayout(seed = WORLD_SEED): WorldLayout {
     }
   }
 
-  // Fix: scatter forest pockets into open meadows so woods dominate the map
+  // Scatter forest pockets into open meadows (keep the village bowl clear)
   for (let gy = 0; gy < GRID_H; gy++) {
     for (let gx = 0; gx < GRID_W; gx++) {
+      if (distToCenter(gx, gy, centerGx, centerGy) <= 9) continue;
       const b = biomes[gy][gx];
       if (b === "meadow" && hash(gx, gy, seed + 9000) > 0.45) {
         biomes[gy][gx] = hash(gx, gy, seed + 9001) > 0.6 ? "deep_forest" : "forest";
@@ -293,6 +296,8 @@ export function generateWorldLayout(seed = WORLD_SEED): WorldLayout {
           trees.push({
             x: x + jx,
             z: z + jz,
+            gx,
+            gy,
             scale: 0.65 + hash(gx, gy, seed + t * 43) * 0.85,
             variant: Math.floor(hash(gx, gy, seed + t * 59) * 3) as 0 | 1 | 2,
             rotation: hash(gx, gy, seed + t * 71) * Math.PI * 2,
@@ -377,6 +382,7 @@ export function cellBiome(
   gx: number,
   gy: number,
   buildings?: { type: string; x: number; y: number }[],
+  clearedForest?: number[],
 ): Biome {
   if (buildings) {
     const mark = buildings.find(
@@ -386,22 +392,63 @@ export function cellBiome(
     if (mark?.type === "forest") return "forest";
     if (mark?.type === "mountain") return "mountain";
   }
-  return biomeAt(gx, gy);
+  const natural = biomeAt(gx, gy);
+  if (
+    (natural === "forest" || natural === "deep_forest") &&
+    clearedForest?.includes(gy * GRID_W + gx)
+  ) {
+    return "meadow";
+  }
+  return natural;
+}
+
+export function forestCellKey(gx: number, gy: number): number {
+  return gy * GRID_W + gx;
+}
+
+/** Standing trees block construction until a woodcutter clears the plot. */
+export function hasStandingTimber(
+  state: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+  gx: number,
+  gy: number,
+): boolean {
+  if (state.clearedForest.includes(forestCellKey(gx, gy))) {
+    // Cleared natural woods — planted forest building still counts as timber
+    return state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy);
+  }
+  if (state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy)) return true;
+  if (state.buildings.some((b) => b.type === "road" && b.x === gx && b.y === gy)) return false;
+  const b = biomeAt(gx, gy);
+  return b === "forest" || b === "deep_forest";
+}
+
+export function isBuildableCell(
+  gx: number,
+  gy: number,
+  state?: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+): boolean {
+  if (state && hasStandingTimber(state, gx, gy)) return false;
+  const b = state ? cellBiome(gx, gy, state.buildings, state.clearedForest) : biomeAt(gx, gy);
+  return b !== "deep_forest" && b !== "water" && b !== "water_shore" && b !== "mountain" && b !== "forest";
+}
+
+export function buildBlockedReason(
+  gx: number,
+  gy: number,
+  state?: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+): string | null {
+  if (state && hasStandingTimber(state, gx, gy)) {
+    return "Trees block this plot — assign a woodcutter to clear them.";
+  }
+  const b = state ? cellBiome(gx, gy, state.buildings, state.clearedForest) : biomeAt(gx, gy);
+  if (b === "water" || b === "water_shore") return "Water — place a Bridge to cross here.";
+  if (b === "mountain") return "Mountains — only Gold Mines can be dug here.";
+  if (b === "deep_forest" || b === "forest") {
+    return "Trees block this plot — assign a woodcutter to clear them.";
+  }
+  return null;
 }
 
 export function isWaterBiome(b: Biome): boolean {
   return b === "water" || b === "water_shore";
-}
-
-export function isBuildableCell(gx: number, gy: number): boolean {
-  const b = biomeAt(gx, gy);
-  return b !== "deep_forest" && b !== "water" && b !== "water_shore" && b !== "mountain";
-}
-
-export function buildBlockedReason(gx: number, gy: number): string | null {
-  const b = biomeAt(gx, gy);
-  if (b === "water" || b === "water_shore") return "Water — place a Bridge to cross here.";
-  if (b === "mountain") return "Mountains — only Gold Mines can be dug here.";
-  if (b === "deep_forest") return "Lay a Road through deep forest, or plant elsewhere.";
-  return null;
 }

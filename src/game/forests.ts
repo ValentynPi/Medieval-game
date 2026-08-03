@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { TILE } from "./config";
+import { GRID_W, TILE } from "./config";
 import type { TreeSlot } from "./worldGen";
 
 const CHUNK = 16; // cells per chunk side
@@ -74,17 +74,22 @@ function chunkKey(cx: number, cz: number): string {
 
 /**
  * Build chunked InstancedMeshes so only nearby forests are drawn.
- * Returns the chunk list + a parent group to add to the scene.
+ * Pass clearedForest keys (gy * GRID_W + gx) to hide felled plots.
  */
-export function buildForestChunks(trees: TreeSlot[]): {
+export function buildForestChunks(
+  trees: TreeSlot[],
+  clearedForest: number[] = [],
+): {
   group: THREE.Group;
   chunks: TreeChunk[];
 } {
   const group = new THREE.Group();
   group.name = "forest_chunks";
+  const cleared = new Set(clearedForest);
   const buckets = new Map<string, TreeSlot[]>();
 
   for (const t of trees) {
+    if (cleared.has(t.gy * GRID_W + t.gx)) continue;
     const cx = Math.floor(t.x / (CHUNK * TILE));
     const cz = Math.floor(t.z / (CHUNK * TILE));
     const key = chunkKey(cx, cz);
@@ -108,7 +113,6 @@ export function buildForestChunks(trees: TreeSlot[]): {
     const [cxStr, czStr] = key.split(",");
     const cx = Number(cxStr);
     const cz = Number(czStr);
-    // One material per chunk by majority variant — keeps draw calls low
     const mat = mats[Math.abs(cx + cz * 3) % 3];
     const mesh = new THREE.InstancedMesh(geo, mat, slots.length);
     mesh.frustumCulled = true;
@@ -130,14 +134,13 @@ export function buildForestChunks(trees: TreeSlot[]): {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
 
-    const chunk: TreeChunk = {
+    chunks.push({
       cx,
       cz,
       mesh,
       centerX: sumX / slots.length,
       centerZ: sumZ / slots.length,
-    };
-    chunks.push(chunk);
+    });
     group.add(mesh);
   }
 

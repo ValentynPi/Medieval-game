@@ -235,6 +235,8 @@ export interface GameState {
   /** Next map click sets workplace for selected villager */
   assignWorkplace: boolean;
   constructionSites: ConstructionSite[];
+  /** Grid keys (gy * GRID_W + gx) of natural forest cleared by woodcutters */
+  clearedForest: number[];
   tutorialStep: number;
   victory: boolean;
   defeat: boolean;

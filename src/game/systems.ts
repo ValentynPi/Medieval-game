@@ -40,7 +40,7 @@ import {
   troopVariantForLevel,
   variantUnlockedAt,
 } from "./combat";
-import { biomeAt, buildBlockedReason, cellBiome, isBuildableCell, isWaterBiome } from "./worldGen";
+import { biomeAt, buildBlockedReason, cellBiome, hasStandingTimber, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, repathVillagersAfterCrossing, tickVillagers } from "./villagers";
 import { bridgeSpanCells } from "./pathfind";
 import type {
@@ -98,7 +98,7 @@ function workerProduction(state: GameState, v: Villager): Resources {
   const gx = v.workGx;
   const gy = v.workGy;
   const b = buildingAt(state, gx, gy);
-  const biome = cellBiome(gx, gy, state.buildings);
+  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
   const out: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
 
   if (v.job === "woodcutter") {
@@ -177,7 +177,7 @@ function claimFarmFields(
       if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) continue;
       if (buildingAt(state, x, y)) continue;
       if (fieldOwnedByOther(state, x, y, exceptFarmId)) continue;
-      const biome = cellBiome(x, y, state.buildings);
+      const biome = cellBiome(x, y, state.buildings, state.clearedForest);
       if (biome !== "meadow" && biome !== "path" && biome !== "forest") continue;
       fields.push({ x, y });
     }
@@ -261,21 +261,37 @@ function canPlaceAt(
       flash(state, "Gold Mines need a mountain — raise one or find natural peaks.");
       return false;
     }
-  } else if (type === "road" || type === "forest" || type === "mountain") {
+  } else if (type === "forest") {
     if (isWaterBiome(biome)) {
       flash(state, "Cannot shape terrain on water — use a Bridge.");
+      return false;
+    }
+    if (biome === "mountain") {
+      flash(state, "Trees will not take root on bare mountain.");
+      return false;
+    }
+    if (hasStandingTimber(state, x, y)) {
+      flash(state, "This plot is already wooded.");
+      return false;
+    }
+  } else if (type === "road" || type === "mountain") {
+    if (isWaterBiome(biome)) {
+      flash(state, "Cannot shape terrain on water — use a Bridge.");
+      return false;
+    }
+    if (type === "road" && hasStandingTimber(state, x, y)) {
+      flash(state, "Trees block this plot — assign a woodcutter to clear them first.");
       return false;
     }
     if (type === "road" && biome === "mountain") {
       flash(state, "Roads cannot cut through mountain peaks.");
       return false;
     }
-    if (type === "forest" && biome === "mountain") {
-      flash(state, "Trees will not take root on bare mountain.");
-      return false;
-    }
-  } else if (!isBuildableCell(x, y)) {
-    flash(state, buildBlockedReason(x, y) ?? "You cannot build here.");
+  } else if (hasStandingTimber(state, x, y)) {
+    flash(state, "Trees block this plot — assign a woodcutter to clear them first.");
+    return false;
+  } else if (!isBuildableCell(x, y, state)) {
+    flash(state, buildBlockedReason(x, y, state) ?? "You cannot build here.");
     return false;
   }
   const def = BUILDINGS[type];
