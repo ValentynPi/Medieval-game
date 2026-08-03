@@ -225,6 +225,8 @@ export interface GameState {
   messageTimer: number;
   selectedBuild: BuildingType | null;
   selectedBuildingId: string | null;
+  /** Relocate mode — next valid click moves this building */
+  movingBuildingId: string | null;
   /** Placement preview facing (0–3 quarter turns) */
   buildRotation: number;
   paused: boolean;

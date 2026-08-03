@@ -8,6 +8,9 @@ import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/s
 import {
   finishBattleReturn,
   flash,
+  beginMoveBuilding,
+  cancelMoveBuilding,
+  moveBuildingTo,
   issueAttackOrder,
   issueHoldOrder,
   issueMoveOrder,
@@ -311,6 +314,7 @@ document.querySelector("#nav-world")!.addEventListener("click", () => {
   state.mode = "world";
   state.selectedBuild = null;
   state.selectedBuildingId = null;
+  state.movingBuildingId = null;
   village.setGhost(null, null);
   const field = totalTroops(fieldArmy(state));
   flash(
@@ -329,10 +333,20 @@ canvas.addEventListener("pointermove", (e) => {
   if (state.mode !== "village") return;
   const cell = village.pickCell(e.clientX, e.clientY);
   lastGhostCell = cell;
+  if (state.movingBuildingId) {
+    const moving = state.buildings.find((b) => b.id === state.movingBuildingId);
+    if (moving) village.setGhost(moving.type, cell, state.buildRotation);
+    return;
+  }
   if (state.selectedBuild) village.setGhost(state.selectedBuild, cell, state.buildRotation);
 });
 
 canvas.addEventListener("pointerleave", () => {
+  if (state.movingBuildingId) {
+    const moving = state.buildings.find((b) => b.id === state.movingBuildingId);
+    if (moving) village.setGhost(moving.type, null, state.buildRotation);
+    return;
+  }
   if (state.selectedBuild) village.setGhost(state.selectedBuild, null, state.buildRotation);
 });
 
@@ -406,11 +420,19 @@ canvas.addEventListener("click", (e) => {
     return;
   }
 
+  if (state.movingBuildingId && cell) {
+    if (moveBuildingTo(state, state.movingBuildingId, cell.x, cell.y)) persist();
+    village.setGhost(null, null);
+    renderHud();
+    return;
+  }
+
   const villagerId = village.pickVillager(e.clientX, e.clientY);
   if (villagerId) {
     state.selectedVillagerId = villagerId;
     state.selectedBuildingId = null;
     state.selectedBuild = null;
+    state.movingBuildingId = null;
     state.assignWorkplace = false;
     state.buildRotation = 0;
     village.setGhost(null, null);
@@ -426,6 +448,7 @@ canvas.addEventListener("click", (e) => {
     state.selectedVillagerId = null;
     state.assignWorkplace = false;
     state.selectedBuild = null;
+    state.movingBuildingId = null;
     state.buildRotation = 0;
     village.setGhost(null, null);
     const picked = state.buildings.find((b) => b.id === pickedId);
@@ -445,6 +468,7 @@ canvas.addEventListener("click", (e) => {
     state.selectedVillagerId = null;
     state.assignWorkplace = false;
     state.selectedBuild = null;
+    state.movingBuildingId = null;
     village.setGhost(null, null);
     if (existing.type === "barracks") {
       flash(state, "Training camp open — drill recruits on the right.", 3);
@@ -457,6 +481,7 @@ canvas.addEventListener("click", (e) => {
   state.selectedBuildingId = null;
   state.selectedVillagerId = null;
   state.assignWorkplace = false;
+  state.movingBuildingId = null;
   if (state.selectedBuild) {
     if (placeBuilding(state, state.selectedBuild, cell.x, cell.y)) persist();
   }
@@ -565,6 +590,12 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (e.key === "Escape") {
+    if (state.movingBuildingId) {
+      cancelMoveBuilding(state);
+      village.setGhost(null, null);
+      hudDirty = true;
+      return;
+    }
     state.selectedBuild = null;
     state.selectedVillagerId = null;
     state.assignWorkplace = false;
@@ -576,7 +607,27 @@ window.addEventListener("keydown", (e) => {
     }
     hudDirty = true;
   }
+  if (state.mode === "village" && e.key.toLowerCase() === "m" && !e.ctrlKey && !e.metaKey) {
+    if (state.selectedBuildingId && !state.movingBuildingId) {
+      if (beginMoveBuilding(state, state.selectedBuildingId)) {
+        const moving = state.buildings.find((b) => b.id === state.movingBuildingId);
+        if (moving) village.setGhost(moving.type, lastGhostCell, state.buildRotation);
+        hudDirty = true;
+        renderHud();
+      }
+      return;
+    }
+  }
   if (state.mode === "village" && e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey) {
+    if (state.movingBuildingId) {
+      state.buildRotation = (state.buildRotation + 1) % 4;
+      const moving = state.buildings.find((b) => b.id === state.movingBuildingId);
+      if (moving && lastGhostCell) {
+        village.setGhost(moving.type, lastGhostCell, state.buildRotation);
+      }
+      hudDirty = true;
+      return;
+    }
     if (state.selectedBuild) {
       rotateBuildPreview(state);
       if (lastGhostCell) {
@@ -805,6 +856,7 @@ function renderHud(): void {
       btn.addEventListener("click", () => {
         state.selectedBuild = type;
         state.selectedBuildingId = null;
+        state.movingBuildingId = null;
         state.buildRotation = 0;
         village.setGhost(type, null, 0);
         hudDirty = true;
@@ -825,23 +877,31 @@ function renderHud(): void {
       selected.type === "farm"
         ? `<p class="hint">Fields: ${selected.fields?.length ?? 0} plots (more food).</p>`
         : "";
+    const moving = state.movingBuildingId === selected.id;
+    const moveHint = moving
+      ? `<p class="hint">Click a plot to place it · Esc cancel · R rotate</p>`
+      : `<p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>`;
     if (selected.type === "barracks") {
       selectedBox.innerHTML = `
       <div class="stat-row"><span>Training Camp</span><span>Lv ${selected.level}</span></div>
       <p>${def.description}</p>
       <p class="hint">Troop roster and drills are on the right panel.</p>
-      <p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next upgrade: ${nextCost}</p>
+      ${moveHint}
       <button class="primary" id="upgrade-btn">Upgrade camp</button>
+      <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
       <button id="rotate-btn">Rotate (R)</button>
+      ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
     `;
     } else {
     selectedBox.innerHTML = `
       <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
       <p>${def.description}</p>
       ${fieldNote}
-      <p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>
+      ${moveHint}
       <button class="primary" id="upgrade-btn">Upgrade</button>
+      <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
       <button id="rotate-btn">Rotate (R)</button>
+      ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
     `;
     }
     selectedBox.querySelector("#upgrade-btn")?.addEventListener("click", () => {
@@ -849,13 +909,32 @@ function renderHud(): void {
       hudDirty = true;
       renderHud();
     });
+    selectedBox.querySelector("#move-btn")?.addEventListener("click", () => {
+      if (beginMoveBuilding(state, selected.id)) {
+        village.setGhost(selected.type, lastGhostCell, state.buildRotation);
+        persist();
+      }
+      hudDirty = true;
+      renderHud();
+    });
+    selectedBox.querySelector("#cancel-move-btn")?.addEventListener("click", () => {
+      cancelMoveBuilding(state);
+      village.setGhost(null, null);
+      hudDirty = true;
+      renderHud();
+    });
     selectedBox.querySelector("#rotate-btn")?.addEventListener("click", () => {
-      if (rotateBuilding(state, selected.id)) persist();
+      if (state.movingBuildingId === selected.id) {
+        state.buildRotation = (state.buildRotation + 1) % 4;
+        village.setGhost(selected.type, lastGhostCell, state.buildRotation);
+      } else if (rotateBuilding(state, selected.id)) {
+        persist();
+      }
       hudDirty = true;
       renderHud();
     });
   } else {
-    selectedBox.innerHTML = `<p class="hint">Click a building in the village to upgrade.</p>`;
+    selectedBox.innerHTML = `<p class="hint">Click a building to upgrade or move it.</p>`;
   }
   }
 

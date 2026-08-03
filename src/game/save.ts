@@ -159,6 +159,7 @@ export function loadGame(): GameState | null {
       paused: false,
       selectedBuild: null,
       selectedBuildingId: null,
+      movingBuildingId: null,
       buildRotation: 0,
       message: `Welcome back — Day ${Math.floor(data.day)}. Townsfolk are about their work.`,
       messageTimer: 5,

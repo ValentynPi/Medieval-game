@@ -235,13 +235,14 @@ function canPlaceAt(
   type: BuildingType,
   x: number,
   y: number,
+  ignoreBuildingId?: string,
 ): boolean {
-  if (!PLACEABLE.includes(type)) return false;
+  if (!PLACEABLE.includes(type) && type !== "keep") return false;
   if (state.constructionSites.some((s) => s.x === x && s.y === y)) {
     flash(state, "Builders are already raising something on that plot.");
     return false;
   }
-  const existing = buildingAt(state, x, y);
+  const existing = buildingAt(state, x, y, ignoreBuildingId);
   if (type === "mine" && existing?.type === "mountain") return true;
   // Bridges may remake an existing crossing in place
   if (existing && !(type === "bridge" && existing.type === "bridge")) {
@@ -249,13 +250,19 @@ function canPlaceAt(
     return false;
   }
   if (fieldAt(state, x, y) && type !== "farm") {
-    flash(state, "Crop fields already cover this plot.");
-    return false;
+    const self = ignoreBuildingId
+      ? state.buildings.find((b) => b.id === ignoreBuildingId)
+      : undefined;
+    const onOwnField = !!self?.fields?.some((c) => c.x === x && c.y === y);
+    if (!onOwnField) {
+      flash(state, "Crop fields already cover this plot.");
+      return false;
+    }
   }
   const biome = biomeAt(x, y);
   if (type === "bridge") {
     if (!isWaterBiome(biome)) {
-      flash(state, "Timber Bridges can only be placed on rivers and lakes.");
+      flash(state, "Bridges can only be placed on rivers and lakes.");
       return false;
     }
     const info = bridgeSpanInfo(x, y);
@@ -263,9 +270,8 @@ function canPlaceAt(
       flash(state, "No dry shore on both sides — pick a narrower crossing.");
       return false;
     }
-    // Allow remaking an existing bridge on this span (replace in place — never wipe the crossing).
     const blocking = info.cells.some((cell) => {
-      const b = buildingAt(state, cell.x, cell.y);
+      const b = buildingAt(state, cell.x, cell.y, ignoreBuildingId);
       if (b && b.type !== "bridge") return true;
       return state.constructionSites.some((s) => {
         if (s.x === cell.x && s.y === cell.y) return true;
@@ -282,7 +288,7 @@ function canPlaceAt(
       return false;
     }
   } else if (type === "mine") {
-    if (biome !== "mountain") {
+    if (biome !== "mountain" && existing?.type !== "mountain") {
       flash(state, "Gold Mines need a mountain — raise one or find natural peaks.");
       return false;
     }
@@ -312,6 +318,19 @@ function canPlaceAt(
       flash(state, "Roads cannot cut through mountain peaks.");
       return false;
     }
+  } else if (type === "keep") {
+    if (isWaterBiome(biome)) {
+      flash(state, "The Keep cannot stand on water.");
+      return false;
+    }
+    if (hasStandingTimber(state, x, y)) {
+      flash(state, "Trees block this plot — clear them first.");
+      return false;
+    }
+    if (biome === "mountain") {
+      flash(state, "The Keep cannot sit on a mountain peak.");
+      return false;
+    }
   } else if (hasStandingTimber(state, x, y)) {
     flash(state, "Trees block this plot — assign a woodcutter to clear them first.");
     return false;
@@ -320,17 +339,22 @@ function canPlaceAt(
     return false;
   }
   const def = BUILDINGS[type];
-  if (keepLevel(state) < def.keepRequired) {
+  if (type !== "keep" && keepLevel(state) < def.keepRequired) {
     flash(state, `${def.name} needs Keep level ${def.keepRequired}.`);
     return false;
   }
   if (type === "barracks" && countType(state, "barracks") >= 2) {
-    flash(state, "Two Barracks is the limit for this realm.");
-    return false;
+    // Moving an existing barracks is fine
+    if (!ignoreBuildingId || !state.buildings.some((b) => b.id === ignoreBuildingId && b.type === "barracks")) {
+      flash(state, "Two Barracks is the limit for this realm.");
+      return false;
+    }
   }
   if (type === "buildersHall" && countType(state, "buildersHall") >= 1) {
-    flash(state, "One Builders Hall is enough — upgrade it for a larger crew.");
-    return false;
+    if (!ignoreBuildingId || !state.buildings.some((b) => b.id === ignoreBuildingId && b.type === "buildersHall")) {
+      flash(state, "One Builders Hall is enough — upgrade it for a larger crew.");
+      return false;
+    }
   }
   return true;
 }
@@ -652,6 +676,94 @@ export function rotateBuilding(state: GameState, id: string): boolean {
     b.fields = claimFarmFields(state, b.x, b.y, b.rotation, b.level, b.id);
   }
   flash(state, `${BUILDINGS[b.type].name} turned — ${b.rotation * 90}°`, 2);
+  return true;
+}
+
+export function beginMoveBuilding(state: GameState, id: string): boolean {
+  if (state.mode !== "village") return false;
+  const b = state.buildings.find((x) => x.id === id);
+  if (!b) return false;
+  state.movingBuildingId = id;
+  state.selectedBuildingId = id;
+  state.selectedBuild = null;
+  state.selectedVillagerId = null;
+  state.assignWorkplace = false;
+  state.buildRotation = b.rotation ?? 0;
+  flash(state, `Moving ${BUILDINGS[b.type].name} — click a new plot (Esc to cancel).`, 5);
+  return true;
+}
+
+export function cancelMoveBuilding(state: GameState): void {
+  if (!state.movingBuildingId) return;
+  state.movingBuildingId = null;
+  flash(state, "Move cancelled.", 2);
+}
+
+export function moveBuildingTo(state: GameState, id: string, x: number, y: number): boolean {
+  const b = state.buildings.find((o) => o.id === id);
+  if (!b) return false;
+  if (b.x === x && b.y === y && b.type !== "bridge") {
+    state.movingBuildingId = null;
+    flash(state, "Already here.");
+    return true;
+  }
+
+  if (!canPlaceAt(state, b.type, x, y, id)) return false;
+
+  const oldX = b.x;
+  const oldY = b.y;
+
+  if (b.type === "bridge") {
+    const info = bridgeSpanInfo(x, y);
+    if (!info) return false;
+    const mid = info.cells[Math.floor(info.cells.length / 2)];
+    b.x = mid.x;
+    b.y = mid.y;
+    b.rotation = info.axis === "ns" ? 1 : 0;
+    b.span = info.cells.map((c) => ({ x: c.x, y: c.y }));
+    repathVillagersAfterCrossing(state);
+  } else if (b.type === "mine") {
+    const at = buildingAt(state, x, y, id);
+    if (at?.type === "mountain") {
+      state.buildings = state.buildings.filter((o) => o.id !== at.id);
+    }
+    b.x = x;
+    b.y = y;
+  } else {
+    b.x = x;
+    b.y = y;
+    b.rotation = state.buildRotation;
+    if (b.type === "farm") {
+      b.fields = claimFarmFields(state, x, y, b.rotation, b.level, b.id);
+    }
+  }
+
+  // Keep workplaces following the relocated structure
+  for (const v of state.villagers) {
+    if (v.workGx === oldX && v.workGy === oldY) {
+      v.workGx = b.x;
+      v.workGy = b.y;
+      v.path = [];
+      v.pathI = 0;
+    }
+  }
+
+  const roads = autoConnectRoads(
+    state,
+    b.type,
+    b.x,
+    b.y,
+    b.type === "bridge" ? b.span : undefined,
+  );
+  state.movingBuildingId = null;
+  state.selectedBuildingId = b.id;
+  flash(
+    state,
+    roads > 0
+      ? `${BUILDINGS[b.type].name} moved — roads linked (${roads}).`
+      : `${BUILDINGS[b.type].name} moved.`,
+    4,
+  );
   return true;
 }
 

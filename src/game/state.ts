@@ -233,6 +233,7 @@ export function createInitialState(): GameState {
     messageTimer: 6,
     selectedBuild: null,
     selectedBuildingId: null,
+    movingBuildingId: null,
     buildRotation: 0,
     paused: false,
     battle: null,
@@ -277,8 +278,9 @@ export function selectedBuildersHall(state: GameState): Building | undefined {
   return b?.type === "buildersHall" ? b : undefined;
 }
 
-export function buildingAt(state: GameState, x: number, y: number): Building | undefined {
+export function buildingAt(state: GameState, x: number, y: number, ignoreId?: string): Building | undefined {
   return state.buildings.find((b) => {
+    if (ignoreId && b.id === ignoreId) return false;
     if (b.x === x && b.y === y) return true;
     if (b.type === "bridge" && b.span?.some((c) => c.x === x && c.y === y)) return true;
     return false;
