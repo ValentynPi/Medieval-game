@@ -242,7 +242,8 @@ function canPlaceAt(
   }
   const existing = buildingAt(state, x, y);
   if (type === "mine" && existing?.type === "mountain") return true;
-  if (existing) {
+  // Bridges may remake an existing crossing in place
+  if (existing && !(type === "bridge" && existing.type === "bridge")) {
     flash(state, "That plot is already claimed.");
     return false;
   }
@@ -261,15 +262,15 @@ function canPlaceAt(
       flash(state, "No dry shore on both sides — pick a narrower crossing.");
       return false;
     }
-    for (const cell of info.cells) {
-      if (state.constructionSites.some((s) => s.x === cell.x && s.y === cell.y)) {
-        flash(state, "Builders are already raising something on that span.");
-        return false;
-      }
-      if (buildingAt(state, cell.x, cell.y)) {
-        flash(state, "That crossing is already claimed.");
-        return false;
-      }
+    // Allow remaking an existing bridge on this span (replace in place — never wipe the crossing).
+    const blocking = info.cells.some((cell) => {
+      const b = buildingAt(state, cell.x, cell.y);
+      if (!b) return !!state.constructionSites.some((s) => s.x === cell.x && s.y === cell.y);
+      return b.type !== "bridge";
+    });
+    if (blocking) {
+      flash(state, "That crossing is already claimed.");
+      return false;
     }
   } else if (type === "boat") {
     if (!isWaterBiome(biome)) {
@@ -353,6 +354,33 @@ function completeBuilding(
       return;
     }
     const mid = info.cells[Math.floor(info.cells.length / 2)];
+    const spanCells = info.cells.map((c) => ({ x: c.x, y: c.y }));
+
+    // Remake: keep one bridge on this span; remove only other bridge tiles here (never leave a gap).
+    const keep = state.buildings.find(
+      (b) =>
+        b.type === "bridge" &&
+        info.cells.some((c) => b.x === c.x && b.y === c.y || b.span?.some((s) => s.x === c.x && s.y === c.y)),
+    );
+    state.buildings = state.buildings.filter((b) => {
+      if (b.type !== "bridge") return true;
+      if (keep && b.id === keep.id) return true;
+      const covers = info.cells.some(
+        (c) => (b.x === c.x && b.y === c.y) || b.span?.some((s) => s.x === c.x && s.y === c.y),
+      );
+      return !covers;
+    });
+
+    if (keep) {
+      keep.x = mid.x;
+      keep.y = mid.y;
+      keep.rotation = info.axis === "ns" ? 1 : 0;
+      keep.span = spanCells;
+      repathVillagersAfterCrossing(state);
+      flash(state, `Timber Bridge remade — ${spanCells.length} tiles shore to shore.`, 4);
+      return;
+    }
+
     state.buildings.push({
       id: uid("bld"),
       type: "bridge",
@@ -360,13 +388,13 @@ function completeBuilding(
       x: mid.x,
       y: mid.y,
       rotation: info.axis === "ns" ? 1 : 0,
-      span: info.cells.map((c) => ({ x: c.x, y: c.y })),
+      span: spanCells,
     });
     repathVillagersAfterCrossing(state);
     flash(
       state,
-      info.cells.length > 1
-        ? `Timber Bridge spans ${info.cells.length} tiles shore to shore.`
+      spanCells.length > 1
+        ? `Timber Bridge spans ${spanCells.length} tiles shore to shore.`
         : "Timber Bridge laid — townsfolk can cross on foot.",
       4,
     );

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { TILE } from "./config";
 import type { BuildingType } from "./types";
 
 const mat = (
@@ -381,58 +382,65 @@ export function createBuildingMesh(
     }
     case "bridge": {
       const cells = Math.max(1, opts?.spanLength ?? 1);
-      const len = cells * 2.0;
-      const width = 1.15 + Math.min(0.25, level * 0.06);
-      const deckH = 0.14;
-      const deckY = 0.42;
+      const len = cells * TILE;
+      const width = Math.min(1.55, 1.2 + level * 0.08);
+      const deckY = 0.38;
 
-      // Continuous deck along local +X (scene rotates for N–S spans)
-      const deck = box(len + 0.15, deckH, width, level >= 2 ? "#8a6e52" : "#7a6248", deckY);
-      g.add(deck);
-
-      // Plank seams
-      const seams = Math.max(2, cells * 2);
-      for (let i = 0; i < seams; i++) {
-        const t = -len / 2 + ((i + 0.5) / seams) * len;
-        const seam = box(0.06, deckH + 0.02, width * 0.92, "#5a4634", deckY + 0.01);
-        seam.position.x = t;
-        g.add(seam);
+      // Stone abutments on both shores
+      for (const end of [-1, 1] as const) {
+        const abutment = box(0.55, 0.5, width + 0.25, "#6e6a62", 0.22);
+        abutment.position.x = end * (len / 2 + 0.12);
+        g.add(abutment);
+        const step = box(0.7, 0.12, width + 0.1, "#7a766c", 0.5);
+        step.position.x = end * (len / 2 - 0.05);
+        g.add(step);
       }
 
-      // Side rails + uprights
+      // Main timber deck (full span)
+      const deck = box(len, 0.16, width, level >= 2 ? "#8b6f52" : "#7a6248", deckY);
+      g.add(deck);
+      const under = box(len * 0.98, 0.1, width * 0.7, "#4a3a28", deckY - 0.12);
+      g.add(under);
+
+      // Cross-planks
+      for (let i = 0; i < cells * 3; i++) {
+        const t = -len / 2 + ((i + 0.5) / (cells * 3)) * len;
+        const plank = box(0.12, 0.04, width * 0.95, i % 2 === 0 ? "#6a5340" : "#5a4634", deckY + 0.09);
+        plank.position.x = t;
+        g.add(plank);
+      }
+
+      // Handrails both sides
       for (const side of [-1, 1] as const) {
-        const rail = box(len * 0.98, 0.12, 0.07, "#5a4634", deckY + 0.28);
-        rail.position.z = side * (width * 0.42);
-        g.add(rail);
-        const topRail = box(len * 0.98, 0.08, 0.06, "#4a3a28", deckY + 0.48);
-        topRail.position.z = side * (width * 0.42);
-        g.add(topRail);
+        const z = side * (width * 0.48);
+        const beam = box(len * 0.96, 0.1, 0.08, "#4a3a28", deckY + 0.42);
+        beam.position.z = z;
+        g.add(beam);
         for (let i = 0; i <= cells; i++) {
-          const px = -len / 2 + (i / cells) * len;
-          const post = box(0.1, 0.55 + level * 0.08, 0.1, "#3a2e22", deckY + 0.2);
-          post.position.set(px, 0, side * (width * 0.42));
+          const px = -len / 2 + (i / Math.max(1, cells)) * len;
+          const post = box(0.1, 0.62 + level * 0.06, 0.1, "#3a2e22", deckY + 0.18);
+          post.position.set(px, 0, z);
           g.add(post);
+          if (i < cells) {
+            const rope = box(len / cells - 0.12, 0.04, 0.04, "#6a5848", deckY + 0.55);
+            rope.position.set(px + len / (2 * cells), 0, z);
+            g.add(rope);
+          }
         }
       }
 
-      // Shore abutments / stone piers at ends
-      for (const end of [-1, 1] as const) {
-        const pier = box(0.45, 0.55, width * 0.85, "#6a6870", 0.28);
-        pier.position.x = end * (len / 2 + 0.05);
-        g.add(pier);
-        const cap = box(0.55, 0.12, width * 0.95, "#7a7860", 0.58);
-        cap.position.x = end * (len / 2 + 0.05);
-        g.add(cap);
-      }
-
-      // Mid-span supports for longer crossings
-      if (cells >= 3) {
-        const midCount = Math.floor((cells - 1) / 2);
-        for (let i = 1; i <= midCount; i++) {
-          const px = -len / 2 + (i / (midCount + 1)) * len;
-          const pile = box(0.18, 0.7, 0.18, "#4a4540", 0.2);
-          pile.position.set(px, 0, 0);
-          g.add(pile);
+      // Water piles under longer spans
+      if (cells >= 2) {
+        for (let i = 1; i < cells; i++) {
+          const px = -len / 2 + (i / cells) * len;
+          for (const z of [-width * 0.28, width * 0.28] as const) {
+            const pile = box(0.16, 0.85, 0.16, "#3a3834", 0.15);
+            pile.position.set(px, 0, z);
+            g.add(pile);
+          }
+          const brace = box(0.08, 0.08, width * 0.55, "#4a4540", 0.45);
+          brace.position.x = px;
+          g.add(brace);
         }
       }
       break;

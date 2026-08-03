@@ -737,8 +737,8 @@ export class VillageScene {
         yaw = info.axis === "ns" ? Math.PI / 2 : 0;
         const ax = info.cells.reduce((s, c) => s + c.x, 0) / info.cells.length;
         const ay = info.cells.reduce((s, c) => s + c.y, 0) / info.cells.length;
-        wx = ax * TILE;
-        wz = ay * TILE;
+        wx = ax * TILE + TILE / 2;
+        wz = ay * TILE + TILE / 2;
         for (const c of info.cells) {
           const tile = new THREE.Mesh(
             new THREE.PlaneGeometry(TILE * 0.9, TILE * 0.9),
@@ -750,7 +750,7 @@ export class VillageScene {
             }),
           );
           tile.rotation.x = -Math.PI / 2;
-          tile.position.set(c.x * TILE, 0.08, c.y * TILE);
+          tile.position.set(c.x * TILE + TILE / 2, 0.08, c.y * TILE + TILE / 2);
           this.ghostGroup.add(tile);
         }
       }
@@ -972,7 +972,10 @@ export class VillageScene {
     if (b.type === "bridge" && b.span?.length) {
       const ax = b.span.reduce((s, c) => s + c.x, 0) / b.span.length;
       const ay = b.span.reduce((s, c) => s + c.y, 0) / b.span.length;
-      return new THREE.Vector3(ax * TILE, 0, ay * TILE);
+      return new THREE.Vector3(ax * TILE + TILE / 2, 0, ay * TILE + TILE / 2);
+    }
+    if (b.type === "bridge") {
+      return new THREE.Vector3(b.x * TILE + TILE / 2, 0, b.y * TILE + TILE / 2);
     }
     return this.cellToWorld(b.x, b.y);
   }
