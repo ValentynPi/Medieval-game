@@ -110,7 +110,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   road: {
     type: "road",
     name: "Road",
-    description: "Lay a dirt road — speeds troops in battle.",
+    description: "Lay dirt roads by hand. New buildings also auto-link with free roads.",
     maxLevel: 1,
     baseCost: { wood: 8, stone: 12, food: 0, gold: 2 },
     costGrowth: 1,

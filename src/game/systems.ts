@@ -43,6 +43,7 @@ import {
 import { biomeAt, buildBlockedReason, cellBiome, hasStandingTimber, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, repathVillagersAfterCrossing, tickVillagers } from "./villagers";
 import { bridgeSpanInfo } from "./pathfind";
+import { autoConnectRoads } from "./roads";
 import type {
   BattleState,
   BattleUnit,
@@ -347,7 +348,13 @@ function completeBuilding(
     existing.type = "mine";
     existing.level = 1;
     existing.rotation = rot;
-    flash(state, "Builders finished the Gold Mine.");
+    const roads = autoConnectRoads(state, "mine", x, y);
+    flash(
+      state,
+      roads > 0
+        ? `Builders finished the Gold Mine — ${roads} road tiles linked.`
+        : "Builders finished the Gold Mine.",
+    );
     return;
   }
   if (type === "bridge") {
@@ -380,7 +387,14 @@ function completeBuilding(
       keep.rotation = info.axis === "ns" ? 1 : 0;
       keep.span = spanCells;
       repathVillagersAfterCrossing(state);
-      flash(state, `Timber Bridge remade — ${spanCells.length} tiles shore to shore.`, 4);
+      const roads = autoConnectRoads(state, "bridge", mid.x, mid.y, spanCells);
+      flash(
+        state,
+        roads > 0
+          ? `Bridge remade — roads linked (${roads} tiles).`
+          : `Timber Bridge remade — ${spanCells.length} tiles shore to shore.`,
+        4,
+      );
       return;
     }
 
@@ -394,11 +408,14 @@ function completeBuilding(
       span: spanCells,
     });
     repathVillagersAfterCrossing(state);
+    const roads = autoConnectRoads(state, "bridge", mid.x, mid.y, spanCells);
     flash(
       state,
-      spanCells.length > 1
-        ? `Timber Bridge spans ${spanCells.length} tiles shore to shore.`
-        : "Timber Bridge laid — townsfolk can cross on foot.",
+      roads > 0
+        ? `Bridge finished — ${roads} road tiles linked to shore.`
+        : spanCells.length > 1
+          ? `Timber Bridge spans ${spanCells.length} tiles shore to shore.`
+          : "Timber Bridge laid — townsfolk can cross on foot.",
       4,
     );
     return;
@@ -414,8 +431,10 @@ function completeBuilding(
     fields: type === "farm" ? claimFarmFields(state, x, y, rot, 1) : undefined,
   };
   state.buildings.push(building);
+  const roads = autoConnectRoads(state, type, x, y);
+  const roadNote = roads > 0 ? ` Roads linked (${roads}).` : "";
   if (type === "farm") {
-    flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.`);
+    flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.${roadNote}`);
   } else if (type === "boat") {
     flash(state, "Boat docked — move troops onto it to sail the river.");
   } else if (type === "road") {
@@ -425,9 +444,9 @@ function completeBuilding(
   } else if (type === "mountain") {
     flash(state, "Mountain raised — dig a Gold Mine here.");
   } else if (type === "buildersHall") {
-    flash(state, "Builders Hall ready — hire a crew on the right.");
+    flash(state, `Builders Hall ready — hire a crew on the right.${roadNote}`);
   } else {
-    flash(state, `${BUILDINGS[type].name} finished by the crew.`);
+    flash(state, `${BUILDINGS[type].name} finished by the crew.${roadNote}`);
   }
   if (state.tutorialStep === 0 && (type === "farm" || type === "lumber")) {
     state.tutorialStep = 1;
