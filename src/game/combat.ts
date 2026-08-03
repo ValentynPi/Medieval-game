@@ -130,6 +130,173 @@ export function nearestCrossingToward(
   return best;
 }
 
+export function isTroopCellWalkable(state: GameState, gx: number, gy: number): boolean {
+  if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
+  return canEnterWaterCell(state, gx, gy);
+}
+
+type TroopPathNode = { x: number; y: number; g: number; f: number; px: number; py: number };
+
+/**
+ * A* for battle troops: land + Bridge/Boat only (no open blue tiles).
+ * Returns battle-coord waypoints along cell centers.
+ */
+export function findTroopPath(
+  state: GameState,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+): { x: number; y: number }[] | null {
+  const start = nearestDryBattlePos(state, fromX, fromY, 16);
+  const goal = nearestDryBattlePos(state, toX, toY, 16);
+  if (!start || !goal) return null;
+
+  const sx = Math.floor(start.x / CELL);
+  const sy = Math.floor(start.y / CELL);
+  const gx = Math.floor(goal.x / CELL);
+  const gy = Math.floor(goal.y / CELL);
+  if (sx === gx && sy === gy) {
+    return [{ x: goal.x, y: goal.y }];
+  }
+
+  const key = (x: number, y: number) => y * GRID_W + x;
+  const open: TroopPathNode[] = [];
+  const came = new Map<number, TroopPathNode>();
+  const gScore = new Map<number, number>();
+  const startNode: TroopPathNode = {
+    x: sx,
+    y: sy,
+    g: 0,
+    f: Math.hypot(gx - sx, gy - sy),
+    px: sx,
+    py: sy,
+  };
+  open.push(startNode);
+  gScore.set(key(sx, sy), 0);
+  came.set(key(sx, sy), startNode);
+
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+
+  let steps = 0;
+  const MAX_STEPS = 10000;
+  while (open.length && steps < MAX_STEPS) {
+    steps++;
+    let bestI = 0;
+    for (let i = 1; i < open.length; i++) {
+      if (open[i].f < open[bestI].f) bestI = i;
+    }
+    const cur = open[bestI];
+    open[bestI] = open[open.length - 1];
+    open.pop();
+
+    if (cur.x === gx && cur.y === gy) {
+      const cells: { x: number; y: number }[] = [];
+      let n: TroopPathNode | undefined = cur;
+      const seen = new Set<number>();
+      while (n) {
+        const k = key(n.x, n.y);
+        if (seen.has(k)) break;
+        seen.add(k);
+        cells.push({ x: n.x, y: n.y });
+        if (n.x === sx && n.y === sy) break;
+        n = came.get(key(n.px, n.py));
+      }
+      cells.reverse();
+      const simplified = simplifyTroopPath(state, cells);
+      return simplified.map((c, i) => {
+        const last = i === simplified.length - 1;
+        return {
+          x: last ? goal.x : c.x * CELL + CELL / 2,
+          y: last ? goal.y : c.y * CELL + CELL / 2,
+        };
+      });
+    }
+
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      if (!isTroopCellWalkable(state, nx, ny)) continue;
+      if (dx !== 0 && dy !== 0) {
+        if (!isTroopCellWalkable(state, cur.x + dx, cur.y) || !isTroopCellWalkable(state, cur.x, cur.y + dy)) {
+          continue;
+        }
+      }
+      const onBridge = hasBridgeAt(state, nx, ny) || hasBoatAt(state, nx, ny);
+      const stepCost = (dx !== 0 && dy !== 0 ? 1.414 : 1) * (onBridge ? 0.55 : 1);
+      const tentative = cur.g + stepCost;
+      const nk = key(nx, ny);
+      if (tentative >= (gScore.get(nk) ?? Infinity)) continue;
+      gScore.set(nk, tentative);
+      const node: TroopPathNode = {
+        x: nx,
+        y: ny,
+        g: tentative,
+        f: tentative + Math.hypot(gx - nx, gy - ny),
+        px: cur.x,
+        py: cur.y,
+      };
+      came.set(nk, node);
+      open.push(node);
+    }
+  }
+  return null;
+}
+
+function simplifyTroopPath(
+  state: GameState,
+  cells: { x: number; y: number }[],
+): { x: number; y: number }[] {
+  if (cells.length <= 2) return cells;
+  const out: { x: number; y: number }[] = [cells[0]];
+  for (let i = 1; i < cells.length - 1; i++) {
+    const prev = out[out.length - 1];
+    const cur = cells[i];
+    const next = cells[i + 1];
+    const onDeck = hasBridgeAt(state, cur.x, cur.y) || hasBoatAt(state, cur.x, cur.y);
+    const ax = cur.x - prev.x;
+    const ay = cur.y - prev.y;
+    const bx = next.x - cur.x;
+    const by = next.y - cur.y;
+    if (onDeck || ax * by !== ay * bx) out.push(cur);
+  }
+  out.push(cells[cells.length - 1]);
+  return out;
+}
+
+/** Assign a bridge-aware march path; falls back to a direct point if already clear. */
+export function setTroopMarch(
+  state: GameState,
+  u: BattleUnit,
+  toX: number,
+  toY: number,
+): boolean {
+  const path = findTroopPath(state, u.x, u.y, toX, toY);
+  if (path && path.length) {
+    u.path = path;
+    u.pathI = 0;
+    return true;
+  }
+  // Same bank / short hop with clear line
+  if (isTroopWalkableAt(state, toX, toY, u)) {
+    u.path = [{ x: toX, y: toY }];
+    u.pathI = 0;
+    return true;
+  }
+  u.path = [];
+  u.pathI = 0;
+  return false;
+}
+
 export function terrainAtBattle(x: number, y: number, state?: GameState): TerrainMods {
   const { gx, gy } = battleToGrid(x, y);
   const biome = cellBiome(gx, gy, state?.buildings);

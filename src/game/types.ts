@@ -186,6 +186,9 @@ export interface BattleUnit {
   order?: "auto" | "move" | "hold";
   orderX?: number;
   orderY?: number;
+  /** March waypoints in battle coords (bridge-aware path) */
+  path?: { x: number; y: number }[];
+  pathI?: number;
   /** Unit is aboard a boat — can traverse water until landing */
   embarked?: boolean;
 }

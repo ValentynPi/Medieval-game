@@ -1,10 +1,9 @@
-import { BATTLE_H, BATTLE_W, BUILDINGS, CELL, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
+import { BATTLE_H, BATTLE_W, BUILDINGS, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
 import {
   buildingAt,
   countType,
   fieldArmy,
   fieldAt,
-  hasBoatAt,
   keepLevel,
   refreshKeepHpCap,
   selectedBarracks,
@@ -23,13 +22,12 @@ import {
   formationSlots,
   heroAuraMult,
   heroSkillDefenseMult,
-  battleToGrid,
-  canEnterWaterCell,
   isFlanked,
   isTroopWalkableAt,
   isWaterAt,
   nearestCrossingToward,
   nearestDryBattlePos,
+  setTroopMarch,
   moraleCombatMult,
   refreshFogOfWar,
   terrainAtBattle,
@@ -903,9 +901,13 @@ export function issueMoveOrder(state: GameState, x: number, y: number): void {
     }
     u.order = "move";
     u.routing = false;
+    u.facing = facing;
     u.orderX = tx;
     u.orderY = ty;
-    u.facing = facing;
+    if (!setTroopMarch(state, u, tx, ty)) {
+      u.path = [{ x: tx, y: ty }];
+      u.pathI = 0;
+    }
   });
   battle.orderMarker = { x, y };
 }
@@ -919,6 +921,8 @@ export function issueHoldOrder(state: GameState): void {
     u.order = "hold";
     u.orderX = undefined;
     u.orderY = undefined;
+    u.path = [];
+    u.pathI = 0;
   }
   battle.orderMarker = null;
   flash(state, "Hold position!", 2);
@@ -933,6 +937,8 @@ export function issueAttackOrder(state: GameState): void {
     u.order = "auto";
     u.orderX = undefined;
     u.orderY = undefined;
+    u.path = [];
+    u.pathI = 0;
   }
   battle.orderMarker = null;
   flash(state, "Attack nearest foes!", 2);
@@ -1000,30 +1006,6 @@ function resolveWallBlock(units: BattleUnit[], u: BattleUnit, nx: number, ny: nu
   u.y = nextY;
 }
 
-function tryBoardOrBlockWater(
-  state: GameState,
-  u: BattleUnit,
-  nextX: number,
-  nextY: number,
-): boolean {
-  const next = battleToGrid(nextX, nextY);
-  const cur = battleToGrid(u.x, u.y);
-  const nextWet = isWaterAt(nextX, nextY, state);
-  const curWet = isWaterAt(u.x, u.y, state);
-
-  if (!nextWet) {
-    if (u.embarked && curWet) u.embarked = false;
-    return true;
-  }
-
-  // Blue tile: Bridge / Boat deck only (banks count as water visually)
-  if (canEnterWaterCell(state, next.gx, next.gy, u)) {
-    u.embarked = hasBoatAt(state, next.gx, next.gy) || hasBoatAt(state, cur.gx, cur.gy);
-    return true;
-  }
-  return false;
-}
-
 function moveUnit(
   units: BattleUnit[],
   u: BattleUnit,
@@ -1041,49 +1023,28 @@ function moveUnit(
   let nextY = u.y + dirY * step;
 
   if (state && !isTroopWalkableAt(state, nextX, nextY, u)) {
-    // Hit open water — march via Bridge toward the goal
+    // Should already have a path — if not, build one toward intended goal
     const goalX = u.orderX ?? u.x + nx * 400;
     const goalY = u.orderY ?? u.y + ny * 400;
-    const crossing = nearestCrossingToward(state, u.x, u.y, goalX, goalY);
-    if (!crossing) return;
-    const dx = crossing.x - u.x;
-    const dy = crossing.y - u.y;
-    const d = Math.hypot(dx, dy) || 1;
-    if (d < 22) {
-      // On / at deck: prefer next deck cell toward the goal, then land
-      const nextDeck = nearestCrossingToward(
-        state,
-        u.x + nx * CELL * 0.85,
-        u.y + ny * CELL * 0.85,
-        goalX,
-        goalY,
-      );
-      if (nextDeck && (nextDeck.x !== crossing.x || nextDeck.y !== crossing.y || d > 8)) {
-        const ddx = nextDeck.x - u.x;
-        const ddy = nextDeck.y - u.y;
-        const dd = Math.hypot(ddx, ddy) || 1;
-        dirX = ddx / dd;
-        dirY = ddy / dd;
-      } else {
-        dirX = nx;
-        dirY = ny;
-      }
-      nextX = u.x + dirX * step;
-      nextY = u.y + dirY * step;
-      if (!isTroopWalkableAt(state, nextX, nextY, u)) return;
-    } else {
+    if (!u.path?.length) setTroopMarch(state, u, goalX, goalY);
+    const path = u.path;
+    const pi = u.pathI ?? 0;
+    if (path && pi < path.length) {
+      const wp = path[pi];
+      const dx = wp.x - u.x;
+      const dy = wp.y - u.y;
+      const d = Math.hypot(dx, dy) || 1;
       dirX = dx / d;
       dirY = dy / d;
       nextX = u.x + dirX * step;
       nextY = u.y + dirY * step;
       if (!isTroopWalkableAt(state, nextX, nextY, u)) return;
+    } else {
+      return;
     }
-  } else if (state && u.embarked) {
-    tryBoardOrBlockWater(state, u, nextX, nextY);
   }
 
   resolveWallBlock(units, u, dirX, dirY, dt * speedMult);
-  // Hard clamp — never end a step standing in open river
   if (state && !isTroopWalkableAt(state, u.x, u.y, u)) {
     const dry = nearestDryBattlePos(state, u.x, u.y, 12);
     if (dry) {
@@ -1095,6 +1056,36 @@ function moveUnit(
   if (Math.abs(dirX) + Math.abs(dirY) > 0.01) {
     u.facing = Math.atan2(dirX, dirY);
   }
+}
+
+/** Follow bridge-aware waypoints; returns true when the final goal is reached. */
+function followTroopPath(
+  units: BattleUnit[],
+  u: BattleUnit,
+  dt: number,
+  speedMult: number,
+  state: GameState,
+): boolean {
+  const path = u.path;
+  if (!path?.length) return false;
+  let i = u.pathI ?? 0;
+  while (i < path.length) {
+    const wp = path[i];
+    const dx = wp.x - u.x;
+    const dy = wp.y - u.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= 20) {
+      i += 1;
+      u.pathI = i;
+      continue;
+    }
+    const spd = Math.max(0.15, speedMult);
+    moveUnit(units, u, dx / dist, dy / dist, dt, spd, state);
+    return false;
+  }
+  u.path = [];
+  u.pathI = 0;
+  return true;
 }
 
 function finishRaidVictory(state: GameState, battle: BattleState): void {
@@ -1241,29 +1232,58 @@ export function tickBattle(state: GameState, dt: number): void {
       if (u.order === "hold") continue;
 
       if (u.order === "move" && u.orderX != null && u.orderY != null && u.speed > 0) {
+        const spd =
+          terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
+        if (!u.path?.length) setTroopMarch(state, u, u.orderX, u.orderY);
+        if (u.path?.length) {
+          if (followTroopPath(units, u, simDt, spd, state)) {
+            u.order = "auto";
+            u.orderX = undefined;
+            u.orderY = undefined;
+          }
+          continue;
+        }
         const dm = Math.hypot(u.orderX - u.x, u.orderY - u.y);
         if (dm > 22) {
-          const nx = (u.orderX - u.x) / dm;
-          const ny = (u.orderY - u.y) / dm;
-          const spd =
-            terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
-          moveUnit(units, u, nx, ny, simDt, spd, state);
+          moveUnit(units, u, (u.orderX - u.x) / dm, (u.orderY - u.y) / dm, simDt, spd, state);
           continue;
         }
         u.order = "auto";
         u.orderX = undefined;
         u.orderY = undefined;
+        continue;
       }
 
       if (!target || u.speed <= 0) continue;
 
       const dist = Math.hypot(target.x - u.x, target.y - u.y);
       if (dist > effectiveRange) {
-        const nx = (target.x - u.x) / dist;
-        const ny = (target.y - u.y) / dist;
         const spd =
           terrainSpeedMult(u, terrain) * fatigueSpeedMult(u) * moraleCombatMult(u);
+        const midX = u.x + (target.x - u.x) * 0.5;
+        const midY = u.y + (target.y - u.y) * 0.5;
+        const needsBridge = !isTroopWalkableAt(state, midX, midY, u);
+        if (needsBridge) {
+          const end = u.path?.length ? u.path[u.path.length - 1] : null;
+          const stale =
+            !u.path?.length ||
+            (u.pathI ?? 0) >= u.path.length ||
+            (end != null && Math.hypot(end.x - target.x, end.y - target.y) > 140);
+          if (stale) setTroopMarch(state, u, target.x, target.y);
+          if (u.path?.length) {
+            followTroopPath(units, u, simDt, spd, state);
+            continue;
+          }
+        } else {
+          u.path = [];
+          u.pathI = 0;
+        }
+        const nx = (target.x - u.x) / dist;
+        const ny = (target.y - u.y) / dist;
         moveUnit(units, u, nx, ny, simDt, spd, state);
+      } else {
+        u.path = [];
+        u.pathI = 0;
       }
     }
 
