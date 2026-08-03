@@ -265,8 +265,11 @@ function canPlaceAt(
     // Allow remaking an existing bridge on this span (replace in place — never wipe the crossing).
     const blocking = info.cells.some((cell) => {
       const b = buildingAt(state, cell.x, cell.y);
-      if (!b) return !!state.constructionSites.some((s) => s.x === cell.x && s.y === cell.y);
-      return b.type !== "bridge";
+      if (b && b.type !== "bridge") return true;
+      return state.constructionSites.some((s) => {
+        if (s.x === cell.x && s.y === cell.y) return true;
+        return !!s.span?.some((c) => c.x === cell.x && c.y === cell.y);
+      });
     });
     if (blocking) {
       flash(state, "That crossing is already claimed.");
@@ -487,21 +490,51 @@ export function placeBuilding(
 
   if (!needsCrew) {
     completeBuilding(state, type, x, y, rot);
-    // Bridge already flashes a span message — don't overwrite it
-    if (spent && type !== "bridge") flash(state, `${def.name} — paid ${spent}.`, 3);
+    if (spent) flash(state, `${def.name} — paid ${spent}.`, 3);
     return true;
+  }
+
+  let span: { x: number; y: number }[] | undefined;
+  let siteX = x;
+  let siteY = y;
+  let siteRot = rot;
+  if (type === "bridge") {
+    const info = bridgeSpanInfo(x, y);
+    if (!info) {
+      // refund — should not happen after canPlaceAt
+      state.resources = {
+        wood: state.resources.wood + cost.wood,
+        stone: state.resources.stone + cost.stone,
+        food: state.resources.food + cost.food,
+        gold: state.resources.gold + cost.gold,
+      };
+      flash(state, "Cannot span that water — need shore on both sides.");
+      return false;
+    }
+    span = info.cells.map((c) => ({ x: c.x, y: c.y }));
+    const mid = info.cells[Math.floor(info.cells.length / 2)];
+    siteX = mid.x;
+    siteY = mid.y;
+    siteRot = info.axis === "ns" ? 1 : 0;
   }
 
   state.constructionSites.push({
     id: uid("site"),
     type,
-    x,
-    y,
-    rotation: rot,
+    x: siteX,
+    y: siteY,
+    rotation: siteRot,
     progress: 0,
     builderId: null,
+    span,
   });
-  flash(state, `${def.name} foundation — paid ${spent}. A builder is on the way.`, 4);
+  flash(
+    state,
+    type === "bridge"
+      ? `Bridge foundation spans ${span?.length ?? 1} tiles — a builder is on the way.`
+      : `${def.name} foundation — paid ${spent}. A builder is on the way.`,
+    4,
+  );
   return true;
 }
 

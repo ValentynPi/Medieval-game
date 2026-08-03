@@ -7,10 +7,17 @@ function buildingCovers(b: { x: number; y: number; span?: { x: number; y: number
   return !!b.span?.some((c) => c.x === gx && c.y === gy);
 }
 
-/** Safe to stand on water: Bridge underfoot or a docked Boat. */
+/** Safe to stand on water: finished Bridge/Boat, or a bridge still under construction. */
 export function hasWaterCrossing(state: GameState, gx: number, gy: number): boolean {
-  return state.buildings.some(
-    (b) => (b.type === "bridge" || b.type === "boat") && buildingCovers(b, gx, gy),
+  if (
+    state.buildings.some(
+      (b) => (b.type === "bridge" || b.type === "boat") && buildingCovers(b, gx, gy),
+    )
+  ) {
+    return true;
+  }
+  return state.constructionSites.some(
+    (s) => (s.type === "bridge" || s.type === "boat") && buildingCovers(s, gx, gy),
   );
 }
 

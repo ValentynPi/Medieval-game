@@ -88,7 +88,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   bridge: {
     type: "bridge",
     name: "Timber Bridge",
-    description: "One click spans the river shore-to-shore. Townsfolk and troops cross the deck.",
+    description: "Builders raise a shore-to-shore deck. Townsfolk and troops cross when it is finished.",
     maxLevel: 3,
     baseCost: { wood: 70, stone: 40, food: 10, gold: 20 },
     costGrowth: 1.45,
@@ -210,12 +210,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
 };
 
-/** Buildings that appear instantly (paths, water works, terrain, early camps). Others need builders. */
+/** Buildings that appear instantly (paths, terrain, early camps). Others need builders. */
 export const INSTANT_BUILD: BuildingType[] = [
   "road",
   "forest",
   "mountain",
-  "bridge",
   "boat",
   "buildersHall",
   "lumber",

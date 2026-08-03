@@ -78,6 +78,8 @@ export interface ConstructionSite {
   /** 0–1 */
   progress: number;
   builderId: string | null;
+  /** Water cells reserved while a Timber Bridge is under construction */
+  span?: FieldCell[];
 }
 
 export type Resources = Record<ResourceId, number>;

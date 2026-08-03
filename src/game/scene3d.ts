@@ -885,19 +885,31 @@ export class VillageScene {
     }
     for (const s of state.constructionSites) {
       let mesh = this.siteMeshes.get(s.id);
-      const key = `${s.type}:${s.x},${s.y}`;
+      const spanLen = s.span?.length ?? 1;
+      const key = `${s.type}:${s.x},${s.y}:${spanLen}:${s.rotation}`;
       if (!mesh || mesh.userData.siteKey !== key) {
         if (mesh) {
           this.sitesGroup.remove(mesh);
           this.disposeObject(mesh);
         }
-        mesh = createConstructionMesh(s.type, s.progress);
+        mesh = createConstructionMesh(
+          s.type,
+          s.progress,
+          s.type === "bridge" ? { spanLength: spanLen } : undefined,
+        );
         mesh.userData.siteId = s.id;
         mesh.userData.siteKey = key;
         this.siteMeshes.set(s.id, mesh);
         this.sitesGroup.add(mesh);
-        mesh.position.set(s.x * TILE + TILE / 2, 0, s.y * TILE + TILE / 2);
-        mesh.rotation.y = buildingYaw(s.rotation);
+        if (s.type === "bridge" && s.span?.length) {
+          const ax = s.span.reduce((n, c) => n + c.x, 0) / s.span.length;
+          const ay = s.span.reduce((n, c) => n + c.y, 0) / s.span.length;
+          mesh.position.set(ax * TILE + TILE / 2, 0, ay * TILE + TILE / 2);
+          mesh.rotation.y = s.rotation === 1 ? Math.PI / 2 : 0;
+        } else {
+          mesh.position.set(s.x * TILE + TILE / 2, 0, s.y * TILE + TILE / 2);
+          mesh.rotation.y = buildingYaw(s.rotation);
+        }
       }
       mesh.traverse((o) => {
         if (!(o instanceof THREE.Mesh) || !o.material) return;

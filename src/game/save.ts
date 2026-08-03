@@ -71,7 +71,10 @@ export function saveGame(state: GameState): boolean {
         ...v,
         path: v.path.map((p) => ({ ...p })),
       })),
-      constructionSites: state.constructionSites.map((s) => ({ ...s })),
+      constructionSites: state.constructionSites.map((s) => ({
+        ...s,
+        span: s.span?.map((c) => ({ ...c })),
+      })),
       clearedForest: [...state.clearedForest],
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
@@ -144,6 +147,7 @@ export function loadGame(): GameState | null {
         y: s.y + oy,
         builderId: null,
         progress: s.progress ?? 0,
+        span: s.span?.map((c) => ({ x: c.x + ox, y: c.y + oy })),
       })),
       clearedForest: data.clearedForest ?? [],
       selectedVillagerId: null,
