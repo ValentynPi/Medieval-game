@@ -112,6 +112,7 @@ app.innerHTML = `
       <p>Raise a stylized March village in 3D — thatched halls, torchlight, and raids at the gate.</p>
       <ul>
         <li>Place farms &amp; camps, upgrade the Keep</li>
+        <li>Assign townsfolk to work — resources only rise while they work on site</li>
         <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
         <li>Builders Hall → hire builders → they walk out and raise farms &amp; halls</li>
         <li>Townsfolk path around rivers (need bridges) · Win: Keep 4 + clear camps</li>
@@ -280,7 +281,11 @@ document.querySelector("#start-btn")!.addEventListener("click", () => {
   bootFresh();
   intro.classList.add("hidden");
   state.mode = "village";
-  flash(state, "Place a Builders Hall, hire a crew, then order farms — builders will walk there and raise them.");
+  flash(
+    state,
+    "Build workplaces, then assign townsfolk — farms, lumber, quarries only pay while someone works there.",
+    6,
+  );
   persist();
   hudDirty = true;
 });
@@ -621,10 +626,10 @@ function renderResources(): void {
   const foodClass = netFood < 0 || r.food < 25 ? "drain" : "";
   const rate = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}/s`;
   resourcesEl.innerHTML = `
-    <div class="res wood" title="Keep tithes, lumber camps, and woodcutters"><b>Wood</b>${fmt(r.wood)}<small>${rate(p.wood)}</small></div>
-    <div class="res stone" title="Quarries and stonecutters"><b>Stone</b>${fmt(r.stone)}<small>${rate(p.stone)}</small></div>
-    <div class="res food" title="Farms minus a light army ration"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
-    <div class="res gold" title="Keep, markets, and traders"><b>Gold</b>${fmt(r.gold)}<small>${rate(p.gold)}</small></div>
+    <div class="res wood" title="Needs woodcutters working a Lumber Camp or forest"><b>Wood</b>${fmt(r.wood)}<small>${rate(p.wood)}</small></div>
+    <div class="res stone" title="Needs quarrymen / miners on site"><b>Stone</b>${fmt(r.stone)}<small>${rate(p.stone)}</small></div>
+    <div class="res food" title="Needs farmers on farms (minus army ration)"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
+    <div class="res gold" title="Needs traders at Market/Keep (+ tiny Keep tithe)"><b>Gold</b>${fmt(r.gold)}<small>${rate(p.gold)}</small></div>
   `;
   dayPill.textContent = `Day ${Math.floor(state.day)} · Keep L${keepLevel(state)}`;
   if (state.mode === "battle") {

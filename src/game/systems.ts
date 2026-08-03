@@ -55,6 +55,7 @@ import type {
   Resources,
   TroopCounts,
   TroopType,
+  Villager,
   WorldSite,
 } from "./types";
 
@@ -64,27 +65,72 @@ export function flash(state: GameState, text: string, seconds = 4): void {
 }
 
 export function productionPerSecond(state: GameState): Resources {
-  const out: Resources = { wood: 0.35, stone: 0.2, food: 0.35, gold: 0.15 };
+  const out: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
+
+  // Tiny crown tithe from the Keep only — everything else needs workers on site
   for (const b of state.buildings) {
-    const def = BUILDINGS[b.type];
+    if (b.type !== "keep") continue;
+    const def = BUILDINGS.keep;
     if (!def.production) continue;
     for (const key of Object.keys(def.production) as (keyof Resources)[]) {
-      let amount = (def.production[key] ?? 0) * b.level;
-      if (b.type === "farm" && key === "food") {
-        amount += (b.fields?.length ?? 0) * 0.45 * b.level;
-      }
-      out[key] += amount;
+      out[key] += (def.production[key] ?? 0) * b.level;
     }
   }
-  // Working townsfolk add a steady +rate (same idea as building production)
+
   for (const v of state.villagers) {
-    if (v.job === "woodcutter") out.wood += v.phase === "work" ? 0.55 : 0.25;
-    else if (v.job === "farmer") out.food += v.phase === "work" ? 0.5 : 0.22;
-    else if (v.job === "quarryman") out.stone += v.phase === "work" ? 0.4 : 0.18;
-    else if (v.job === "miner") {
-      out.stone += 0.15;
-      out.gold += 0.12;
-    } else if (v.job === "trader") out.gold += 0.2;
+    const haul = workerProduction(state, v);
+    out.wood += haul.wood;
+    out.stone += haul.stone;
+    out.food += haul.food;
+    out.gold += haul.gold;
+  }
+  return out;
+}
+
+/** Steady +rate only while a villager is actively working at a matching site. */
+function workerProduction(state: GameState, v: Villager): Resources {
+  const empty: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
+  if (v.phase !== "work" || v.job === "idle" || v.job === "builder") return empty;
+  if (v.workGx == null || v.workGy == null) return empty;
+  // Must be at the workplace, not still walking
+  if (Math.hypot(v.x - (v.workGx + 0.5), v.y - (v.workGy + 0.5)) > 1.35) return empty;
+
+  const gx = v.workGx;
+  const gy = v.workGy;
+  const b = buildingAt(state, gx, gy);
+  const biome = cellBiome(gx, gy, state.buildings);
+  const out: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
+
+  if (v.job === "woodcutter") {
+    if (b?.type === "lumber") out.wood = 1.15 * (1 + b.level * 0.28);
+    else if (
+      biome === "forest" ||
+      biome === "deep_forest" ||
+      b?.type === "forest"
+    ) {
+      out.wood = 0.8;
+    }
+  } else if (v.job === "farmer") {
+    const farm =
+      b?.type === "farm"
+        ? b
+        : state.buildings.find(
+            (f) => f.type === "farm" && f.fields?.some((c) => c.x === gx && c.y === gy),
+          );
+    if (farm) {
+      out.food = 1.05 * (1 + farm.level * 0.3) + (farm.fields?.length ?? 0) * 0.04;
+    }
+  } else if (v.job === "quarryman") {
+    if (b?.type === "quarry") out.stone = 0.95 * (1 + b.level * 0.28);
+    else if (biome === "rocky" || biome === "mountain") out.stone = 0.55;
+  } else if (v.job === "miner") {
+    if (b?.type === "mine") {
+      out.gold = 0.7 * (1 + b.level * 0.3);
+      out.stone = 0.35 * (1 + b.level * 0.15);
+    }
+  } else if (v.job === "trader") {
+    if (b?.type === "market") out.gold = 0.75 * (1 + b.level * 0.25);
+    else if (b?.type === "keep") out.gold = 0.35 * (1 + b.level * 0.12);
   }
   return out;
 }

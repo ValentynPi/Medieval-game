@@ -46,22 +46,22 @@ export const JOB_LABELS: Record<VillagerJob, string> = {
 
 export const JOB_HINTS: Record<VillagerJob, string> = {
   idle: "Strolls near the Keep — open water drowns them (Bridge or Boat only).",
-  woodcutter: "Takes forest paths and brings back wood.",
-  farmer: "Works farms and fields for food.",
-  quarryman: "Works quarries / rocky ground for stone.",
-  miner: "Works mines for stone and gold.",
-  trader: "Visits markets and the Keep for gold.",
+  woodcutter: "Must work at a Lumber Camp or in the forest to earn wood.",
+  farmer: "Must work a Farm or its fields to earn food.",
+  quarryman: "Must work a Quarry or rocky ground to earn stone.",
+  miner: "Must work a Gold Mine to earn gold and stone.",
+  trader: "Must work a Market or the Keep to earn gold.",
   builder: "Hired at the Builders Hall — walks to sites and raises buildings.",
 };
 
-/** Small haul bonus when a task finishes (steady income is in productionPerSecond) */
+/** Haul bonus when a work cycle finishes (steady +rate only while phase === work) */
 const WORK_YIELD: Record<VillagerJob, Partial<Resources>> = {
   idle: {},
-  woodcutter: { wood: 1.2 },
-  farmer: { food: 1.2 },
-  quarryman: { stone: 1.0 },
-  miner: { stone: 0.6, gold: 0.3 },
-  trader: { gold: 0.5 },
+  woodcutter: { wood: 3.5 },
+  farmer: { food: 3.5 },
+  quarryman: { stone: 2.8 },
+  miner: { stone: 1.5, gold: 1.2 },
+  trader: { gold: 1.8 },
   builder: {},
 };
 
