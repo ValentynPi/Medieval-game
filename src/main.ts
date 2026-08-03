@@ -1,5 +1,5 @@
 import "./style.css";
-import { BUILDINGS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
+import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene3d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
@@ -114,8 +114,8 @@ app.innerHTML = `
         <li>Place farms &amp; camps, upgrade the Keep</li>
         <li>Assign townsfolk to work — resources only rise while they work on site</li>
         <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
-        <li>Builders Hall → hire builders → they walk out and raise farms &amp; halls</li>
-        <li>Townsfolk path around rivers (need bridges) · Win: Keep 4 + clear camps</li>
+        <li>Builders Hall → hire builders → they raise farms, halls, and bridges</li>
+        <li>Townsfolk path around rivers (Build → Bridge on blue water) · Win: Keep 4 + clear camps</li>
       </ul>
       <button class="primary" id="start-btn">Take the throne</button>
       <button id="continue-btn" class="hidden">Continue saved realm</button>
@@ -777,31 +777,42 @@ function renderHud(): void {
   } else {
     leftPanel.innerHTML = `
     <h2>Build</h2>
-    <p>Lumber &amp; quarry place instantly. Farms/halls need builders. Shore is safe — only deep river needs a Bridge.</p>
-    <div class="build-grid" id="build-grid"></div>
+    <p class="hint"><strong>Bridge</strong> is under River crossing — select it, then click blue river water. Needs a Builders Hall crew.</p>
+    <div id="build-sections"></div>
     <h2>Selected</h2>
     <div id="selected-box"></div>
   `;
   }
 
   if (state.mode === "village") {
-  const grid = leftPanel.querySelector("#build-grid")!;
-  for (const type of PLACEABLE) {
-    const def = BUILDINGS[type];
-    const locked = keepLevel(state) < def.keepRequired;
-    const btn = document.createElement("button");
-    btn.className = state.selectedBuild === type ? "active" : "";
-    btn.disabled = locked;
-    btn.innerHTML = `<strong>${def.name}</strong><small>${locked ? `Needs Keep ${def.keepRequired}` : costLabel(type)}</small>`;
-    btn.addEventListener("click", () => {
-      state.selectedBuild = type;
-      state.selectedBuildingId = null;
-      state.buildRotation = 0;
-      village.setGhost(type, null, 0);
-      hudDirty = true;
-      renderHud();
-    });
-    grid.appendChild(btn);
+  const sections = leftPanel.querySelector("#build-sections")!;
+  for (const section of BUILD_MENU_SECTIONS) {
+    const heading = document.createElement("h3");
+    heading.className = "build-section-title";
+    heading.textContent = section.title;
+    sections.appendChild(heading);
+    const grid = document.createElement("div");
+    grid.className = "build-grid";
+    for (const type of section.types) {
+      if (!PLACEABLE.includes(type)) continue;
+      const def = BUILDINGS[type];
+      const locked = keepLevel(state) < def.keepRequired;
+      const btn = document.createElement("button");
+      btn.className = state.selectedBuild === type ? "active" : "";
+      if (type === "bridge") btn.classList.add("build-bridge");
+      btn.disabled = locked;
+      btn.innerHTML = `<strong>${def.name}</strong><small>${locked ? `Needs Keep ${def.keepRequired}` : costLabel(type)}</small>`;
+      btn.addEventListener("click", () => {
+        state.selectedBuild = type;
+        state.selectedBuildingId = null;
+        state.buildRotation = 0;
+        village.setGhost(type, null, 0);
+        hudDirty = true;
+        renderHud();
+      });
+      grid.appendChild(btn);
+    }
+    sections.appendChild(grid);
   }
 
   const selectedBox = leftPanel.querySelector("#selected-box")!;

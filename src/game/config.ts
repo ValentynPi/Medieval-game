@@ -87,8 +87,8 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   bridge: {
     type: "bridge",
-    name: "Timber Bridge",
-    description: "Builders raise a shore-to-shore deck. Townsfolk and troops cross when it is finished.",
+    name: "Bridge",
+    description: "Select Bridge, click the river — builders raise a shore-to-shore deck.",
     maxLevel: 3,
     baseCost: { wood: 70, stone: 40, food: 10, gold: 20 },
     costGrowth: 1.45,
@@ -239,12 +239,12 @@ export const TROOP_STATS: Record<
 };
 
 export const PLACEABLE: BuildingType[] = [
+  "bridge",
+  "boat",
   "farm",
   "lumber",
   "quarry",
   "mine",
-  "bridge",
-  "boat",
   "road",
   "forest",
   "mountain",
@@ -254,6 +254,14 @@ export const PLACEABLE: BuildingType[] = [
   "wall",
   "blacksmith",
   "market",
+];
+
+/** Build menu sections — Bridge first so river crossings are easy to find */
+export const BUILD_MENU_SECTIONS: { title: string; types: BuildingType[] }[] = [
+  { title: "River crossing", types: ["bridge", "boat"] },
+  { title: "Economy", types: ["farm", "lumber", "quarry", "mine", "market"] },
+  { title: "Terrain", types: ["road", "forest", "mountain"] },
+  { title: "Military & civic", types: ["barracks", "buildersHall", "tower", "wall", "blacksmith"] },
 ];
 
 export function scaleCost(base: Resources, level: number, growth: number): Resources {
