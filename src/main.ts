@@ -89,7 +89,7 @@ app.innerHTML = `
     </div>
   </header>
   <div class="layout">
-    <aside class="panel" id="left-panel"></aside>
+    <aside class="panel panel-hidden" id="left-panel"></aside>
     <main class="stage-wrap">
       <div class="msg" id="message"></div>
       <div class="stage" id="stage">
@@ -157,6 +157,7 @@ const worldCanvas = document.querySelector<HTMLCanvasElement>("#world")!;
 const worldCtx = worldCanvas.getContext("2d")!;
 const village = new VillageScene(canvas, stage);
 
+const layoutEl = document.querySelector(".layout")!;
 const resourcesEl = document.querySelector("#resources")!;
 const leftPanel = document.querySelector("#left-panel")!;
 const rightPanel = document.querySelector("#right-panel")!;
@@ -750,6 +751,62 @@ function wireTrainingCamp(camp: Building): void {
   });
 }
 
+function wireSelectedBuildingActions(root: Element, selected: Building): void {
+  root.querySelector("#upgrade-btn")?.addEventListener("click", () => {
+    if (upgradeBuilding(state, selected.id)) persist();
+    hudDirty = true;
+    renderHud();
+  });
+  root.querySelector("#move-btn")?.addEventListener("click", () => {
+    if (beginMoveBuilding(state, selected.id)) {
+      village.setGhost(selected.type, lastGhostCell, state.buildRotation);
+      persist();
+    }
+    hudDirty = true;
+    renderHud();
+  });
+  root.querySelector("#cancel-move-btn")?.addEventListener("click", () => {
+    cancelMoveBuilding(state);
+    village.setGhost(null, null);
+    hudDirty = true;
+    renderHud();
+  });
+  root.querySelector("#rotate-btn")?.addEventListener("click", () => {
+    if (state.movingBuildingId === selected.id) {
+      state.buildRotation = (state.buildRotation + 1) % 4;
+      village.setGhost(selected.type, lastGhostCell, state.buildRotation);
+    } else if (rotateBuilding(state, selected.id)) {
+      persist();
+    }
+    hudDirty = true;
+    renderHud();
+  });
+}
+
+function selectedBuildingHtml(selected: Building): string {
+  const def = BUILDINGS[selected.type];
+  const nextCost =
+    selected.level < def.maxLevel ? costLabel(selected.type, selected.level + 1) : "Maxed";
+  const fieldNote =
+    selected.type === "farm"
+      ? `<p class="hint">Fields: ${selected.fields?.length ?? 0} plots (more food).</p>`
+      : "";
+  const moving = state.movingBuildingId === selected.id;
+  const moveHint = moving
+    ? `<p class="hint">Click a plot to place it · Esc cancel · R rotate</p>`
+    : `<p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>`;
+  return `
+    <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
+    <p>${def.description}</p>
+    ${fieldNote}
+    ${moveHint}
+    <button class="primary" id="upgrade-btn">Upgrade</button>
+    <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
+    <button id="rotate-btn">Rotate (R)</button>
+    ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
+  `;
+}
+
 function renderHud(): void {
   renderResources();
   showStage();
@@ -759,6 +816,10 @@ function renderHud(): void {
     "warn",
     /raid|fallen|driven|starvation|food/i.test(state.message) || state.defeat,
   );
+
+  const showLeft = state.mode === "battle" || state.mode === "world";
+  layoutEl.classList.toggle("with-left", showLeft);
+  leftPanel.classList.toggle("panel-hidden", !showLeft);
 
   if (state.mode === "battle") {
     const battle = state.battle;
@@ -839,87 +900,7 @@ function renderHud(): void {
       list.appendChild(btn);
     }
   } else {
-    leftPanel.innerHTML = `
-    <h2>Selected</h2>
-    <div id="selected-box"></div>
-  `;
-  }
-
-  if (state.mode === "village") {
-  const selectedBox = leftPanel.querySelector("#selected-box")!;
-  const selected = state.buildings.find((b) => b.id === state.selectedBuildingId);
-  if (selected) {
-    const def = BUILDINGS[selected.type];
-    const nextCost =
-      selected.level < def.maxLevel ? costLabel(selected.type, selected.level + 1) : "Maxed";
-    const fieldNote =
-      selected.type === "farm"
-        ? `<p class="hint">Fields: ${selected.fields?.length ?? 0} plots (more food).</p>`
-        : "";
-    const moving = state.movingBuildingId === selected.id;
-    const moveHint = moving
-      ? `<p class="hint">Click a plot to place it · Esc cancel · R rotate</p>`
-      : `<p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>`;
-    const hallHint =
-      selected.type === "buildersHall"
-        ? `<p class="hint">Use the right panel to hire builders and choose what to build.</p>`
-        : "";
-    if (selected.type === "barracks") {
-      selectedBox.innerHTML = `
-      <div class="stat-row"><span>Training Camp</span><span>Lv ${selected.level}</span></div>
-      <p>${def.description}</p>
-      <p class="hint">Troop roster and drills are on the right panel.</p>
-      ${moveHint}
-      <button class="primary" id="upgrade-btn">Upgrade camp</button>
-      <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
-      <button id="rotate-btn">Rotate (R)</button>
-      ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
-    `;
-    } else {
-    selectedBox.innerHTML = `
-      <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
-      <p>${def.description}</p>
-      ${fieldNote}
-      ${hallHint}
-      ${moveHint}
-      <button class="primary" id="upgrade-btn">Upgrade</button>
-      <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
-      <button id="rotate-btn">Rotate (R)</button>
-      ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
-    `;
-    }
-    selectedBox.querySelector("#upgrade-btn")?.addEventListener("click", () => {
-      if (upgradeBuilding(state, selected.id)) persist();
-      hudDirty = true;
-      renderHud();
-    });
-    selectedBox.querySelector("#move-btn")?.addEventListener("click", () => {
-      if (beginMoveBuilding(state, selected.id)) {
-        village.setGhost(selected.type, lastGhostCell, state.buildRotation);
-        persist();
-      }
-      hudDirty = true;
-      renderHud();
-    });
-    selectedBox.querySelector("#cancel-move-btn")?.addEventListener("click", () => {
-      cancelMoveBuilding(state);
-      village.setGhost(null, null);
-      hudDirty = true;
-      renderHud();
-    });
-    selectedBox.querySelector("#rotate-btn")?.addEventListener("click", () => {
-      if (state.movingBuildingId === selected.id) {
-        state.buildRotation = (state.buildRotation + 1) % 4;
-        village.setGhost(selected.type, lastGhostCell, state.buildRotation);
-      } else if (rotateBuilding(state, selected.id)) {
-        persist();
-      }
-      hudDirty = true;
-      renderHud();
-    });
-  } else {
-    selectedBox.innerHTML = `<p class="hint">Click the Builders Hall to choose buildings, or select any structure for upgrades.</p>`;
-  }
+    leftPanel.innerHTML = "";
   }
 
   if (state.mode === "battle") {
@@ -1030,6 +1011,7 @@ function renderHud(): void {
     const placing = state.selectedBuild
       ? `Placing: ${BUILDINGS[state.selectedBuild].name} — click the map`
       : "Choose a building below, then click the map";
+    const movingHall = state.movingBuildingId === hall.id;
     rightPanel.innerHTML = `
       <h2>Builders Hall</h2>
       <p class="hint">Lv ${hall.level} · Hire a crew, then choose what to raise.</p>
@@ -1037,11 +1019,15 @@ function renderHud(): void {
       <div class="stat-row"><span>Sites building</span><span>${sites}</span></div>
       <p class="hint">Hire cost: ${HIRE_BUILDER_COST.food} food · ${HIRE_BUILDER_COST.gold} gold</p>
       <button class="primary" id="hire-builder-btn">Hire builder</button>
-      <button id="upgrade-hall-btn">Upgrade Hall</button>
+      <button id="upgrade-btn">Upgrade Hall</button>
+      <button id="move-btn">${movingHall ? "Moving…" : "Move (M)"}</button>
+      <button id="rotate-btn">Rotate (R)</button>
+      ${movingHall ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
       <h2>Build</h2>
       <p class="hint">${placing}</p>
       <div id="hall-build-sections"></div>
     `;
+    wireSelectedBuildingActions(rightPanel, hall);
     const sections = rightPanel.querySelector("#hall-build-sections")!;
     for (const section of BUILD_MENU_SECTIONS) {
       const heading = document.createElement("h3");
@@ -1077,11 +1063,6 @@ function renderHud(): void {
     }
     rightPanel.querySelector("#hire-builder-btn")?.addEventListener("click", () => {
       if (hireBuilder(state)) persist();
-      hudDirty = true;
-      renderHud();
-    });
-    rightPanel.querySelector("#upgrade-hall-btn")?.addEventListener("click", () => {
-      if (upgradeBuilding(state, hall.id)) persist();
       hudDirty = true;
       renderHud();
     });
@@ -1165,6 +1146,7 @@ function renderHud(): void {
       : `Repair Keep (${repair.wood}w ${repair.stone}s ${repair.gold}g)`;
   if (camp) {
     const bl = camp.level;
+    const movingCamp = state.movingBuildingId === camp.id;
     rightPanel.innerHTML = `
       <h2>Training Camp</h2>
       <p class="hint">Barracks Lv ${bl} · Wall troops fight raids; March troops claim camps</p>
@@ -1176,6 +1158,10 @@ function renderHud(): void {
       <p class="hint">${troopStatLine("infantry", bl)}</p>
       <p class="hint">${troopStatLine("archers", bl)}</p>
       <p class="hint">${troopStatLine("cavalry", bl)}</p>
+      <button class="primary" id="upgrade-btn">Upgrade camp</button>
+      <button id="move-btn">${movingCamp ? "Moving…" : "Move (M)"}</button>
+      <button id="rotate-btn">Rotate (R)</button>
+      ${movingCamp ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
       <h2>Drill recruits</h2>
       <div id="train-box"></div>
       <h2>Garrison (wall)</h2>
@@ -1183,22 +1169,33 @@ function renderHud(): void {
       <div id="garrison-box"></div>
       <button id="repair-btn">${repairLabel}</button>
     `;
+    wireSelectedBuildingActions(rightPanel, camp);
     wireTrainingCamp(camp);
   } else {
-    const power = realmPower(state);
-    rightPanel.innerHTML = `
-      <h2>Realm</h2>
-      <p>${state.hero.name} · Lv ${state.hero.level}</p>
-      <div class="stat-row"><span>Realm Power</span><span>${fmt(power.total)}</span></div>
-      <div class="stat-row"><span>Military</span><span>${fmt(power.military)} (${power.troops} troops)</span></div>
-      <div class="stat-row"><span>City</span><span>${fmt(power.city)}</span></div>
-      <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
-      <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
-      <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
-      <div class="stat-row"><span>Townsfolk</span><span>${state.villagers.length}</span></div>
-      <p class="hint">Power rises with more troops, a stronger Keep, defenses, and a busier town.</p>
-      <button id="repair-btn">${repairLabel}</button>
-    `;
+    const selected = state.buildings.find((b) => b.id === state.selectedBuildingId);
+    if (selected) {
+      rightPanel.innerHTML = `
+        <h2>Selected</h2>
+        ${selectedBuildingHtml(selected)}
+        <button id="repair-btn">${repairLabel}</button>
+      `;
+      wireSelectedBuildingActions(rightPanel, selected);
+    } else {
+      const power = realmPower(state);
+      rightPanel.innerHTML = `
+        <h2>Realm</h2>
+        <p>${state.hero.name} · Lv ${state.hero.level}</p>
+        <div class="stat-row"><span>Realm Power</span><span>${fmt(power.total)}</span></div>
+        <div class="stat-row"><span>Military</span><span>${fmt(power.military)} (${power.troops} troops)</span></div>
+        <div class="stat-row"><span>City</span><span>${fmt(power.city)}</span></div>
+        <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
+        <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
+        <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
+        <div class="stat-row"><span>Townsfolk</span><span>${state.villagers.length}</span></div>
+        <p class="hint">Click a building for upgrades · Power rises with troops, Keep, and town.</p>
+        <button id="repair-btn">${repairLabel}</button>
+      `;
+    }
   }
 
   rightPanel.querySelector("#repair-btn")?.addEventListener("click", () => {
