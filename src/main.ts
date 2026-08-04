@@ -17,6 +17,7 @@ import {
   placeBuilding,
   previewExpedition,
   productionPerSecond,
+  realmPower,
   repairKeep,
   repairKeepCost,
   resolveExpedition,
@@ -680,11 +681,13 @@ function renderResources(): void {
   const netFood = p.food - upkeep;
   const foodClass = netFood < 0 || r.food < 25 ? "drain" : "";
   const rate = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}/s`;
+  const power = realmPower(state);
   resourcesEl.innerHTML = `
     <div class="res wood" title="Needs woodcutters working a Lumber Camp or forest"><b>Wood</b>${fmt(r.wood)}<small>${rate(p.wood)}</small></div>
     <div class="res stone" title="Needs quarrymen / miners on site"><b>Stone</b>${fmt(r.stone)}<small>${rate(p.stone)}</small></div>
     <div class="res food" title="Needs farmers on farms (minus army ration)"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
     <div class="res gold" title="Needs traders at Market/Keep (+ tiny Keep tithe)"><b>Gold</b>${fmt(r.gold)}<small>${rate(p.gold)}</small></div>
+    <div class="res power" title="Realm Power = troops (${power.troops} levies → ${power.military}) + city (${power.city} from Keep, halls, defenses, folk)"><b>Power</b>${fmt(power.total)}<small>${power.military}⚔ ${power.city}🏛</small></div>
   `;
   dayPill.textContent = `Day ${Math.floor(state.day)} · Keep L${keepLevel(state)}`;
   if (state.mode === "battle") {
@@ -812,6 +815,7 @@ function renderHud(): void {
       <p class="hint">Blue = trade cities. Colored camps = war. Economy &amp; raid timer pause here.</p>
       <div class="stat-row"><span>Wall (garrison)</span><span>${wall}</span></div>
       <div class="stat-row"><span>March (field)</span><span>${march}${march < 4 ? " · need 4+" : ""}</span></div>
+      <div class="stat-row"><span>Realm Power</span><span>${fmt(realmPower(state).total)}</span></div>
       <div class="stat-row"><span>Cities</span><span>${state.cities.length}</span></div>
       <div class="stat-row"><span>Camps</span><span>${state.sites.filter((s) => !s.cleared).length} hostile</span></div>
       <div class="build-grid" id="city-list"></div>
@@ -1154,6 +1158,7 @@ function renderHud(): void {
       <div class="stat-row"><span>Archers</span><span>${state.troops.archers} (${state.garrison.archers} wall)</span></div>
       <div class="stat-row"><span>Cavalry</span><span>${state.troops.cavalry} (${state.garrison.cavalry} wall)</span></div>
       <div class="stat-row"><span>Wall / March</span><span>${totalTroops(state.garrison)} / ${totalTroops(fieldArmy(state))}</span></div>
+      <div class="stat-row"><span>Realm Power</span><span>${fmt(realmPower(state).total)}</span></div>
       <p class="hint">${troopStatLine("infantry", bl)}</p>
       <p class="hint">${troopStatLine("archers", bl)}</p>
       <p class="hint">${troopStatLine("cavalry", bl)}</p>
@@ -1166,14 +1171,18 @@ function renderHud(): void {
     `;
     wireTrainingCamp(camp);
   } else {
+    const power = realmPower(state);
     rightPanel.innerHTML = `
       <h2>Realm</h2>
       <p>${state.hero.name} · Lv ${state.hero.level}</p>
+      <div class="stat-row"><span>Realm Power</span><span>${fmt(power.total)}</span></div>
+      <div class="stat-row"><span>Military</span><span>${fmt(power.military)} (${power.troops} troops)</span></div>
+      <div class="stat-row"><span>City</span><span>${fmt(power.city)}</span></div>
       <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
       <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
       <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
       <div class="stat-row"><span>Townsfolk</span><span>${state.villagers.length}</span></div>
-      <p class="hint">Click a person in the village to set their job. Barracks drills troops.</p>
+      <p class="hint">Power rises with more troops, a stronger Keep, defenses, and a busier town.</p>
       <button id="repair-btn">${repairLabel}</button>
     `;
   }

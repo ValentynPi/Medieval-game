@@ -135,6 +135,15 @@ body {
   color: var(--gold);
 }
 
+.res.power {
+  border-color: #8a6a28;
+  background: #2a2418;
+}
+
+.res.power b {
+  color: #e8c96a;
+}
+
 .top-meta {
   display: flex;
   gap: 8px;

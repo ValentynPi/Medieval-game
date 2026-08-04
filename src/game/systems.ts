@@ -885,6 +885,72 @@ function smithBonus(state: GameState): number {
   return smith ? 1 + smith.level * 0.1 : 1;
 }
 
+/** Per-building weight toward realm power (roads/terrain ignored). */
+function buildingPowerValue(type: BuildingType, level: number): number {
+  switch (type) {
+    case "keep":
+      return level * 45;
+    case "barracks":
+      return 20 + level * 18;
+    case "tower":
+      return 16 + level * 14;
+    case "wall":
+      return 12 + level * 10;
+    case "blacksmith":
+      return 18 + level * 16;
+    case "buildersHall":
+      return 14 + level * 10;
+    case "market":
+      return 12 + level * 12;
+    case "farm":
+    case "lumber":
+    case "quarry":
+    case "mine":
+      return 8 + level * 8;
+    case "bridge":
+      return 10 + level * 6;
+    case "boat":
+      return 6 + level * 4;
+    case "road":
+    case "forest":
+    case "mountain":
+      return 0;
+    default:
+      return 5 + level * 4;
+  }
+}
+
+export interface RealmPowerBreakdown {
+  total: number;
+  military: number;
+  city: number;
+  troops: number;
+}
+
+/**
+ * Realm Power — troops + hero + how developed the March is (Keep, halls, defenses, economy).
+ */
+export function realmPower(state: GameState): RealmPowerBreakdown {
+  const heroBonus = state.hero.level * 8;
+  const rawMilitary = armyPower(state.troops, heroBonus);
+  const military = Math.round(rawMilitary * smithBonus(state));
+
+  let city = 0;
+  for (const b of state.buildings) {
+    city += buildingPowerValue(b.type, b.level);
+  }
+  city += state.villagers.length * 3;
+  city += Math.min(80, wealthScore(state) * 0.04);
+  city = Math.round(city);
+
+  return {
+    military,
+    city,
+    troops: totalTroops(state.troops),
+    total: military + city,
+  };
+}
+
 function raidThreat(state: GameState): number {
   const wave = state.raidCount + 1;
   const wealth = wealthScore(state) / 80;

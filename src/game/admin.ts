@@ -5,6 +5,7 @@ import {
   finishBattleReturn,
   finishConstructionSite,
   flash,
+  realmPower,
   startRaid,
 } from "./systems";
 import type { GameState, TroopType } from "./types";
@@ -148,9 +149,11 @@ export function adminResetEndFlags(state: GameState): void {
 }
 
 export function adminStatusLine(state: GameState): string {
+  const power = realmPower(state);
   return [
     `Day ${state.day}`,
     `Keep L${keepLevel(state)}`,
+    `Power ${power.total}`,
     `Raid #${state.raidCount} in ${Math.ceil(state.timeToRaid)}s`,
     `Folk ${state.villagers.length}`,
     `Sites ${state.sites.filter((s) => s.cleared).length}/${state.sites.length}`,
