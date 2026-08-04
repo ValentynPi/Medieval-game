@@ -143,12 +143,23 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   barracks: {
     type: "barracks",
     name: "Barracks",
-    description: "Training camp — drill levies here. Upgrades unlock veteran unit types.",
+    description: "Houses levies — each Barracks has a troop cap. Assign wall garrison here.",
     maxLevel: 5,
     baseCost: { wood: 60, stone: 40, food: 40, gold: 30 },
     costGrowth: 1.55,
     color: "#4a3f35",
     roof: "#6b2f2f",
+    keepRequired: 1,
+  },
+  trainingGround: {
+    type: "trainingGround",
+    name: "Training Ground",
+    description: "Recruit and drill new troops here. Needs Barracks beds for the muster.",
+    maxLevel: 4,
+    baseCost: { wood: 45, stone: 25, food: 35, gold: 25 },
+    costGrowth: 1.5,
+    color: "#5a4a38",
+    roof: "#8b3a2a",
     keepRequired: 1,
   },
   tower: {
@@ -231,6 +242,11 @@ export function maxFarmFields(level: number): number {
   return 4 + Math.max(0, level) * 3;
 }
 
+/** Troop beds provided by one Barracks of the given level */
+export function barracksTroopCap(level: number): number {
+  return 10 + Math.max(1, level) * 6;
+}
+
 export const TRAIN_COST: Record<TroopType, Resources> = {
   infantry: { wood: 5, stone: 0, food: 12, gold: 8 },
   archers: { wood: 12, stone: 0, food: 10, gold: 10 },
@@ -257,6 +273,7 @@ export const PLACEABLE: BuildingType[] = [
   "forest",
   "mountain",
   "barracks",
+  "trainingGround",
   "buildersHall",
   "tower",
   "wall",
@@ -269,7 +286,7 @@ export const BUILD_MENU_SECTIONS: { title: string; types: BuildingType[] }[] = [
   { title: "River crossing", types: ["bridge", "boat"] },
   { title: "Economy", types: ["farm", "lumber", "quarry", "mine", "market"] },
   { title: "Terrain", types: ["road", "forest", "mountain"] },
-  { title: "Military & civic", types: ["barracks", "tower", "wall", "blacksmith"] },
+  { title: "Military & civic", types: ["barracks", "trainingGround", "tower", "wall", "blacksmith"] },
 ];
 
 export function scaleCost(base: Resources, level: number, growth: number): Resources {

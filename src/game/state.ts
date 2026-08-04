@@ -1,4 +1,4 @@
-import { BUILDINGS, GRID_H, GRID_W } from "./config";
+import { BUILDINGS, GRID_H, GRID_W, barracksTroopCap } from "./config";
 import { hasRoadAtFast, invalidateSpatialIndex, structureAtFast } from "./spatial";
 import type { Building, FieldCell, GameState, TradeCity, WorldSite } from "./types";
 
@@ -281,10 +281,25 @@ export function barracksLevel(state: GameState): number {
   return max;
 }
 
+/** Sum of troop beds across every Barracks */
+export function troopCapacity(state: GameState): number {
+  let cap = 0;
+  for (const b of state.buildings) {
+    if (b.type === "barracks") cap += barracksTroopCap(b.level);
+  }
+  return cap;
+}
+
 export function selectedBarracks(state: GameState): Building | undefined {
   if (!state.selectedBuildingId) return undefined;
   const b = state.buildings.find((x) => x.id === state.selectedBuildingId);
   return b?.type === "barracks" ? b : undefined;
+}
+
+export function selectedTrainingGround(state: GameState): Building | undefined {
+  if (!state.selectedBuildingId) return undefined;
+  const b = state.buildings.find((x) => x.id === state.selectedBuildingId);
+  return b?.type === "trainingGround" ? b : undefined;
 }
 
 export function selectedBuildersHall(state: GameState): Building | undefined {

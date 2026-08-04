@@ -284,6 +284,29 @@ export function createBuildingMesh(
       }
       break;
     }
+    case "trainingGround": {
+      const yard = box(1.8 * grow, 0.06, 1.6 * grow, "#6a5a42", 0.03);
+      g.add(yard);
+      const hut = box(0.7 * grow, 0.55 * grow, 0.55 * grow, "#5a4a38");
+      hut.position.set(-0.55 * grow, 0, -0.45 * grow);
+      g.add(hut);
+      g.add(roof(0.85 * grow, 0.4 * grow, 0.7 * grow, "#8b3a2a", 0.85 * grow));
+      for (let i = 0; i < 3; i++) {
+        const post = box(0.08, 0.7 + i * 0.05, 0.08, "#3a3028", 0.35);
+        post.position.set(0.2 * grow + i * 0.35, 0, 0.35 * grow);
+        g.add(post);
+      }
+      const ring = box(0.9 * grow, 0.05, 0.9 * grow, "#7a6a50", 0.04);
+      ring.position.set(0.35 * grow, 0, 0.15 * grow);
+      g.add(ring);
+      if (level >= 2) flag(g, 1.2 * grow, "#c9a227");
+      if (level >= 3) {
+        const racks = box(0.5, 0.35, 0.12, "#4a4038", 0.2);
+        racks.position.set(0.7 * grow, 0, -0.5 * grow);
+        g.add(racks);
+      }
+      break;
+    }
     case "tower": {
       const shaftH = 1.5 + level * 0.38;
       const shaft = new THREE.Mesh(

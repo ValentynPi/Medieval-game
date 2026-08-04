@@ -12,6 +12,7 @@ export type BuildingType =
   | "forest"
   | "mountain"
   | "barracks"
+  | "trainingGround"
   | "tower"
   | "wall"
   | "blacksmith"

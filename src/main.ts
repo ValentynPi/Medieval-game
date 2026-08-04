@@ -1,9 +1,9 @@
 import "./style.css";
-import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, maxFarmFields, scaleCost } from "./game/config";
+import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, barracksTroopCap, maxFarmFields, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene3d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
-import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedBuildersHall, selectedCity, selectedSite, totalTroops } from "./game/state";
+import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedBuildersHall, selectedCity, selectedSite, selectedTrainingGround, totalTroops, troopCapacity } from "./game/state";
 import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/save";
 import {
   finishBattleReturn,
@@ -123,7 +123,7 @@ app.innerHTML = `
         <li>Click the Builders Hall to choose what to raise, then click the map</li>
         <li>Hire builders at the Hall — they walk out and finish most buildings</li>
         <li>Assign townsfolk to work — resources only rise while they work on site</li>
-        <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
+        <li>Barracks house troops (beds cap the muster); recruit at the Training Ground</li>
         <li>Townsfolk path around rivers (Bridge on blue water) · Win: Keep 4 + clear camps</li>
       </ul>
       <button class="primary" id="start-btn">Take the throne</button>
@@ -483,7 +483,9 @@ canvas.addEventListener("click", (e) => {
       village.setGhost(null, null);
       village.setFieldGhost(null);
       if (picked.type === "barracks") {
-        flash(state, "Training camp open — drill recruits on the right.", 3);
+        flash(state, "Barracks — assign wall garrison here. Recruit at the Training Ground.", 4);
+      } else if (picked.type === "trainingGround") {
+        flash(state, "Training Ground — recruit troops here (needs Barracks beds).", 4);
       } else if (picked.type === "buildersHall") {
         flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
       } else if (picked.type === "farm") {
@@ -508,7 +510,9 @@ canvas.addEventListener("click", (e) => {
     village.setGhost(null, null);
     village.setFieldGhost(null);
     if (existing.type === "barracks") {
-      flash(state, "Training camp open — drill recruits on the right.", 3);
+      flash(state, "Barracks — assign wall garrison here. Recruit at the Training Ground.", 4);
+    } else if (existing.type === "trainingGround") {
+      flash(state, "Training Ground — recruit troops here (needs Barracks beds).", 4);
     } else if (existing.type === "buildersHall") {
       flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
     } else if (existing.type === "farm") {
@@ -717,7 +721,7 @@ function showStage(): void {
 
 function chapterLabel(step: number): string {
   if (step <= 0) return "Chapter 1 · Raise a mill";
-  if (step === 1) return "Chapter 1 · Build a Barracks";
+  if (step === 1) return "Chapter 1 · Barracks + Training Ground";
   if (step === 2) return "Chapter 1 · Survive a raid";
   return "Chapter 2 · March the World Map";
 }
@@ -759,22 +763,27 @@ function troopStatLine(type: TroopType, level: number): string {
   return `${variantLabel(variant)} · ${Math.round(base.hp * vm.hpMult)} HP · ${Math.round(base.atk * vm.atkMult)} ATK`;
 }
 
-function wireTrainingCamp(camp: Building): void {
-  const bl = camp.level;
+function wireRecruitPanel(_ground: Building): void {
+  const bl = barracksLevel(state);
   const trainBox = rightPanel.querySelector("#train-box")!;
+  const cap = troopCapacity(state);
+  const have = totalTroops(state.troops);
   (["infantry", "archers", "cavalry"] as TroopType[]).forEach((t) => {
     const c = trainCostFor(state, t);
     const next = nextVariantUnlock(t, bl);
+    const full = have >= cap;
     const row = document.createElement("div");
     row.className = "train-row";
-    row.innerHTML = `<div class="train-row-main"><span>${variantLabel(troopVariantForLevel(t, bl))}</span><small>${c.food}f ${c.gold}g</small><button>+1</button></div>${next ? `<small class="hint">${next}</small>` : ""}`;
+    row.innerHTML = `<div class="train-row-main"><span>${variantLabel(troopVariantForLevel(t, bl))}</span><small>${c.food}f ${c.gold}g</small><button ${full ? "disabled" : ""}>+1</button></div>${next ? `<small class="hint">${next}</small>` : ""}`;
     row.querySelector("button")!.addEventListener("click", () => {
       if (trainTroop(state, t, 1)) persist();
       renderHud();
     });
     trainBox.appendChild(row);
   });
+}
 
+function wireGarrisonPanel(): void {
   const garBox = rightPanel.querySelector("#garrison-box")!;
   (["infantry", "archers", "cavalry"] as TroopType[]).forEach((t) => {
     const row = document.createElement("div");
@@ -1219,38 +1228,64 @@ function renderHud(): void {
     }
   } else {
   const camp = selectedBarracks(state);
+  const ground = selectedTrainingGround(state);
   const repair = repairKeepCost(state);
   const repairLabel =
     state.keepHp >= state.keepMaxHp
       ? `Keep intact (${fmt(state.keepHp)}/${fmt(state.keepMaxHp)})`
       : `Repair Keep (${repair.wood}w ${repair.stone}s ${repair.gold}g)`;
-  if (camp) {
+  const cap = troopCapacity(state);
+  const have = totalTroops(state.troops);
+  if (ground) {
+    const bl = barracksLevel(state);
+    const movingGround = state.movingBuildingId === ground.id;
+    rightPanel.innerHTML = `
+      <h2>Training Ground</h2>
+      <p class="hint">Lv ${ground.level} · Recruit here · Unit quality from Barracks Lv ${Math.max(1, bl)}</p>
+      <div class="stat-row"><span>Muster beds</span><span>${have} / ${cap}</span></div>
+      <div class="stat-row"><span>Infantry</span><span>${state.troops.infantry}</span></div>
+      <div class="stat-row"><span>Archers</span><span>${state.troops.archers}</span></div>
+      <div class="stat-row"><span>Cavalry</span><span>${state.troops.cavalry}</span></div>
+      ${cap <= 0 ? `<p class="hint">Build Barracks first — no beds for recruits.</p>` : have >= cap ? `<p class="hint">Muster full — upgrade or build more Barracks.</p>` : ""}
+      <p class="hint">${troopStatLine("infantry", Math.max(1, bl))}</p>
+      <p class="hint">${troopStatLine("archers", Math.max(1, bl))}</p>
+      <p class="hint">${troopStatLine("cavalry", Math.max(1, bl))}</p>
+      <button class="primary" id="upgrade-btn">Upgrade grounds</button>
+      <button id="move-btn">${movingGround ? "Moving…" : "Move (M)"}</button>
+      <button id="rotate-btn">Rotate (R)</button>
+      ${movingGround ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
+      <h2>Recruit</h2>
+      <div id="train-box"></div>
+      <button id="repair-btn">${repairLabel}</button>
+    `;
+    wireSelectedBuildingActions(rightPanel, ground);
+    wireRecruitPanel(ground);
+  } else if (camp) {
     const bl = camp.level;
+    const beds = barracksTroopCap(camp.level);
     const movingCamp = state.movingBuildingId === camp.id;
     rightPanel.innerHTML = `
-      <h2>Training Camp</h2>
-      <p class="hint">Barracks Lv ${bl} · Wall troops fight raids; March troops claim camps</p>
+      <h2>Barracks</h2>
+      <p class="hint">Lv ${bl} · ${beds} beds in this hall · Wall troops fight raids</p>
+      <div class="stat-row"><span>This hall</span><span>${beds} beds</span></div>
+      <div class="stat-row"><span>Realm muster</span><span>${have} / ${cap}</span></div>
       <div class="stat-row"><span>Infantry</span><span>${state.troops.infantry} (${state.garrison.infantry} wall)</span></div>
       <div class="stat-row"><span>Archers</span><span>${state.troops.archers} (${state.garrison.archers} wall)</span></div>
       <div class="stat-row"><span>Cavalry</span><span>${state.troops.cavalry} (${state.garrison.cavalry} wall)</span></div>
       <div class="stat-row"><span>Wall / March</span><span>${totalTroops(state.garrison)} / ${totalTroops(fieldArmy(state))}</span></div>
       <div class="stat-row"><span>Realm Power</span><span>${fmt(realmPower(state).total)}</span></div>
-      <p class="hint">${troopStatLine("infantry", bl)}</p>
-      <p class="hint">${troopStatLine("archers", bl)}</p>
-      <p class="hint">${troopStatLine("cavalry", bl)}</p>
-      <button class="primary" id="upgrade-btn">Upgrade camp</button>
+      <p class="hint">Recruit new troops at the Training Ground. Upgrade Barracks for more beds and better variants.</p>
+      <button class="primary" id="upgrade-btn">Upgrade barracks</button>
       <button id="move-btn">${movingCamp ? "Moving…" : "Move (M)"}</button>
       <button id="rotate-btn">Rotate (R)</button>
       ${movingCamp ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
-      <h2>Drill recruits</h2>
-      <div id="train-box"></div>
       <h2>Garrison (wall)</h2>
       <p class="hint">Sliders assign defenders. Remaining troops form the field army.</p>
       <div id="garrison-box"></div>
       <button id="repair-btn">${repairLabel}</button>
     `;
     wireSelectedBuildingActions(rightPanel, camp);
-    wireTrainingCamp(camp);
+    wireGarrisonPanel();
   } else {
     const selected = state.buildings.find((b) => b.id === state.selectedBuildingId);
     if (selected) {
@@ -1267,12 +1302,12 @@ function renderHud(): void {
         <p>${state.hero.name} · Lv ${state.hero.level}</p>
         <div class="stat-row"><span>Realm Power</span><span>${fmt(power.total)}</span></div>
         <div class="stat-row"><span>Military</span><span>${fmt(power.military)} (${power.troops} troops)</span></div>
+        <div class="stat-row"><span>Muster beds</span><span>${have} / ${cap || "—"}</span></div>
         <div class="stat-row"><span>City</span><span>${fmt(power.city)}</span></div>
-        <div class="stat-row"><span>Total levies</span><span>${totalTroops(state.troops)}</span></div>
         <div class="stat-row"><span>Wall (garrison)</span><span>${totalTroops(state.garrison)}</span></div>
         <div class="stat-row"><span>March (field)</span><span>${totalTroops(fieldArmy(state))}</span></div>
         <div class="stat-row"><span>Townsfolk</span><span>${state.villagers.length}</span></div>
-        <p class="hint">Click a building for upgrades · Power rises with troops, Keep, and town.</p>
+        <p class="hint">Barracks hold troops · Training Ground recruits · Power rises with muster and town.</p>
         <button id="repair-btn">${repairLabel}</button>
       `;
     }

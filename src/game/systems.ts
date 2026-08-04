@@ -1,5 +1,5 @@
-import { BATTLE_H, BATTLE_W, BUILDINGS, FIELD_PLOT_COST, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, maxFarmFields, pay, scaleCost, triangleMultiplier } from "./config";
 import {
+  barracksLevel,
   buildingAt,
   clearRoadsAt,
   countType,
@@ -11,9 +11,11 @@ import {
   selectedBarracks,
   siteUnlocked,
   totalTroops,
+  troopCapacity,
   uid,
   wealthScore,
 } from "./state";
+import { BATTLE_H, BATTLE_W, BUILDINGS, FIELD_PLOT_COST, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, barracksTroopCap, canAfford, gridToBattleX, gridToBattleY, maxFarmFields, pay, scaleCost, triangleMultiplier } from "./config";
 import {
   addCombatFloat,
   applyMoraleHit,
@@ -420,10 +422,16 @@ function canPlaceAt(
     flash(state, `${def.name} needs Keep level ${def.keepRequired}.`);
     return false;
   }
-  if (type === "barracks" && countType(state, "barracks") >= 2) {
+  if (type === "barracks" && countType(state, "barracks") >= 5) {
     // Moving an existing barracks is fine
     if (!ignoreBuildingId || !state.buildings.some((b) => b.id === ignoreBuildingId && b.type === "barracks")) {
-      flash(state, "Two Barracks is the limit for this realm.");
+      flash(state, "Five Barracks is the limit for this realm.");
+      return false;
+    }
+  }
+  if (type === "trainingGround" && countType(state, "trainingGround") >= 2) {
+    if (!ignoreBuildingId || !state.buildings.some((b) => b.id === ignoreBuildingId && b.type === "trainingGround")) {
+      flash(state, "Two Training Grounds is enough — upgrade them instead.");
       return false;
     }
   }
@@ -875,21 +883,21 @@ export function upgradeBuilding(state: GameState, id: string): boolean {
     refreshKeepHpCap(state);
     state.keepHp = state.keepMaxHp;
     flash(state, `Keep rises to level ${b.level}. New crafts unlock.`);
-  } else {
-    flash(
-      state,
-      b.type === "farm"
-        ? `Mill upgraded to ${b.level} — field cap ${maxFarmFields(b.level)}.`
-        : `${def.name} upgraded to ${b.level}.`,
-    );
-    if (b.type === "barracks") {
-      const unlocked = (["infantry", "archers", "cavalry"] as TroopType[])
-        .map((t) => variantUnlockedAt(t, b.level))
-        .filter((x): x is string => !!x);
-      if (unlocked.length) {
-        flash(state, `Veteran drills unlocked: ${unlocked.join(", ")}`, 5);
-      }
+  } else if (b.type === "farm") {
+    flash(state, `Mill upgraded to ${b.level} — field cap ${maxFarmFields(b.level)}.`);
+  } else if (b.type === "barracks") {
+    const unlocked = (["infantry", "archers", "cavalry"] as TroopType[])
+      .map((t) => variantUnlockedAt(t, b.level))
+      .filter((x): x is string => !!x);
+    if (unlocked.length) {
+      flash(state, `Veteran drills unlocked: ${unlocked.join(", ")} · beds ${barracksTroopCap(b.level)}.`, 5);
+    } else {
+      flash(state, `Barracks upgraded — now ${barracksTroopCap(b.level)} beds.`, 4);
     }
+  } else if (b.type === "trainingGround") {
+    flash(state, `Training Ground Lv ${b.level} — cheaper drills.`, 3);
+  } else {
+    flash(state, `${def.name} upgraded to ${b.level}.`);
   }
   return true;
 }
@@ -906,19 +914,45 @@ export function trainCostFor(state: GameState, type: TroopType): Resources {
       gold: Math.floor(cost.gold * discount),
     };
   }
+  const ground = state.buildings
+    .filter((b) => b.type === "trainingGround")
+    .reduce((m, b) => Math.max(m, b.level), 0);
+  if (ground > 1) {
+    const drill = 1 - Math.min(0.2, (ground - 1) * 0.05);
+    cost = {
+      wood: Math.floor(cost.wood * drill),
+      stone: Math.floor(cost.stone * drill),
+      food: Math.floor(cost.food * drill),
+      gold: Math.floor(cost.gold * drill),
+    };
+  }
   return cost;
 }
 
 export function trainTroop(state: GameState, type: TroopType, amount = 1): boolean {
-  if (countType(state, "barracks") < 1) {
-    flash(state, "Build a Barracks first.");
+  if (countType(state, "trainingGround") < 1) {
+    flash(state, "Build a Training Ground to recruit troops.");
     return false;
   }
-  const camp = state.buildings.find(
-    (b) => b.id === state.selectedBuildingId && b.type === "barracks",
+  if (countType(state, "barracks") < 1) {
+    flash(state, "Build Barracks first — recruits need beds.");
+    return false;
+  }
+  const ground = state.buildings.find(
+    (b) => b.id === state.selectedBuildingId && b.type === "trainingGround",
   );
-  if (!camp) {
-    flash(state, "Click your Training Camp (Barracks) to drill recruits.");
+  if (!ground) {
+    flash(state, "Click your Training Ground to recruit.");
+    return false;
+  }
+  const cap = troopCapacity(state);
+  const have = totalTroops(state.troops);
+  if (have + amount > cap) {
+    flash(
+      state,
+      `Muster full (${have}/${cap}). Build or upgrade Barracks for more beds.`,
+      4,
+    );
     return false;
   }
   const cost = trainCostFor(state, type);
@@ -934,8 +968,8 @@ export function trainTroop(state: GameState, type: TroopType, amount = 1): boole
   }
   state.resources = pay(state.resources, total);
   state.troops[type] += amount;
-  const variant = troopVariantForLevel(type, camp.level);
-  flash(state, `Trained ${amount} ${variantLabel(variant)}.`);
+  const variant = troopVariantForLevel(type, barracksLevel(state));
+  flash(state, `Trained ${amount} ${variantLabel(variant)} · ${have + amount}/${cap} beds.`);
   if (state.tutorialStep === 1) state.tutorialStep = 2;
   return true;
 }
@@ -962,6 +996,8 @@ function buildingPowerValue(type: BuildingType, level: number): number {
       return level * 45;
     case "barracks":
       return 20 + level * 18;
+    case "trainingGround":
+      return 16 + level * 14;
     case "tower":
       return 16 + level * 14;
     case "wall":
