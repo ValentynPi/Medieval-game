@@ -227,6 +227,8 @@ export interface GameState {
   selectedBuildingId: string | null;
   /** Relocate mode — next valid click moves this building */
   movingBuildingId: string | null;
+  /** Buy-and-place crop plots for this mill */
+  placingFieldFarmId: string | null;
   /** Placement preview facing (0–3 quarter turns) */
   buildRotation: number;
   paused: boolean;

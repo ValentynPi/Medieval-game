@@ -248,6 +248,7 @@ export function createInitialState(): GameState {
     selectedBuild: null,
     selectedBuildingId: null,
     movingBuildingId: null,
+    placingFieldFarmId: null,
     buildRotation: 0,
     paused: false,
     battle: null,

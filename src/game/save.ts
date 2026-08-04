@@ -160,6 +160,7 @@ export function loadGame(): GameState | null {
       selectedBuild: null,
       selectedBuildingId: null,
       movingBuildingId: null,
+      placingFieldFarmId: null,
       buildRotation: 0,
       message: `Welcome back — Day ${Math.floor(data.day)}. Townsfolk are about their work.`,
       messageTimer: 5,

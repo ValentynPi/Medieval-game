@@ -43,8 +43,8 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   farm: {
     type: "farm",
-    name: "Farm",
-    description: "Crop fields — assign a farmer to work here for food.",
+    name: "Mill",
+    description: "Grain mill — buy crop fields separately and place them nearby for more food.",
     maxLevel: 6,
     baseCost: { wood: 40, stone: 10, food: 0, gold: 15 },
     costGrowth: 1.45,
@@ -222,6 +222,14 @@ export const INSTANT_BUILD: BuildingType[] = [
 ];
 
 export const HIRE_BUILDER_COST: Resources = { wood: 0, stone: 0, food: 28, gold: 22 };
+
+/** Cost to add one crop plot to a mill */
+export const FIELD_PLOT_COST: Resources = { wood: 6, stone: 0, food: 4, gold: 3 };
+
+/** Soft cap: base plots + extra per mill level */
+export function maxFarmFields(level: number): number {
+  return 4 + Math.max(0, level) * 3;
+}
 
 export const TRAIN_COST: Record<TroopType, Resources> = {
   infantry: { wood: 5, stone: 0, food: 12, gold: 8 },

@@ -1,5 +1,5 @@
 import "./style.css";
-import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, scaleCost } from "./game/config";
+import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, maxFarmFields, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene3d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
@@ -9,8 +9,12 @@ import {
   finishBattleReturn,
   flash,
   beginMoveBuilding,
+  beginPlaceField,
   cancelMoveBuilding,
+  cancelPlaceField,
   moveBuildingTo,
+  placeFieldPlot,
+  fieldPlotCostLabel,
   issueAttackOrder,
   issueHoldOrder,
   issueMoveOrder,
@@ -343,6 +347,10 @@ canvas.addEventListener("pointermove", (e) => {
     if (moving) village.setGhost(moving.type, cell, state.buildRotation);
     return;
   }
+  if (state.placingFieldFarmId) {
+    village.setFieldGhost(cell);
+    return;
+  }
   if (state.selectedBuild) village.setGhost(state.selectedBuild, cell, state.buildRotation);
 });
 
@@ -350,6 +358,10 @@ canvas.addEventListener("pointerleave", () => {
   if (state.movingBuildingId) {
     const moving = state.buildings.find((b) => b.id === state.movingBuildingId);
     if (moving) village.setGhost(moving.type, null, state.buildRotation);
+    return;
+  }
+  if (state.placingFieldFarmId) {
+    village.setFieldGhost(null);
     return;
   }
   if (state.selectedBuild) village.setGhost(state.selectedBuild, null, state.buildRotation);
@@ -425,6 +437,13 @@ canvas.addEventListener("click", (e) => {
     return;
   }
 
+  if (state.placingFieldFarmId && cell) {
+    if (placeFieldPlot(state, cell.x, cell.y)) persist();
+    if (!state.placingFieldFarmId) village.setFieldGhost(null);
+    renderHud();
+    return;
+  }
+
   if (state.movingBuildingId && cell) {
     if (moveBuildingTo(state, state.movingBuildingId, cell.x, cell.y)) persist();
     village.setGhost(null, null);
@@ -438,9 +457,11 @@ canvas.addEventListener("click", (e) => {
     state.selectedBuildingId = null;
     state.selectedBuild = null;
     state.movingBuildingId = null;
+    state.placingFieldFarmId = null;
     state.assignWorkplace = false;
     state.buildRotation = 0;
     village.setGhost(null, null);
+    village.setFieldGhost(null);
     const v = state.villagers.find((x) => x.id === villagerId);
     flash(state, `${v?.name ?? "Villager"} — choose their work on the right, or send them somewhere.`, 4);
     renderHud();
@@ -456,12 +477,16 @@ canvas.addEventListener("click", (e) => {
       state.assignWorkplace = false;
       state.selectedBuild = null;
       state.movingBuildingId = null;
+      state.placingFieldFarmId = null;
       state.buildRotation = 0;
       village.setGhost(null, null);
+      village.setFieldGhost(null);
       if (picked.type === "barracks") {
         flash(state, "Training camp open — drill recruits on the right.", 3);
       } else if (picked.type === "buildersHall") {
         flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
+      } else if (picked.type === "farm") {
+        flash(state, "Mill selected — buy crop fields on the right to raise food.", 4);
       }
       renderHud();
       return;
@@ -478,11 +503,15 @@ canvas.addEventListener("click", (e) => {
     state.assignWorkplace = false;
     state.selectedBuild = null;
     state.movingBuildingId = null;
+    state.placingFieldFarmId = null;
     village.setGhost(null, null);
+    village.setFieldGhost(null);
     if (existing.type === "barracks") {
       flash(state, "Training camp open — drill recruits on the right.", 3);
     } else if (existing.type === "buildersHall") {
       flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
+    } else if (existing.type === "farm") {
+      flash(state, "Mill selected — buy crop fields on the right to raise food.", 4);
     }
     renderHud();
     return;
@@ -491,6 +520,7 @@ canvas.addEventListener("click", (e) => {
   state.selectedVillagerId = null;
   state.assignWorkplace = false;
   state.movingBuildingId = null;
+  state.placingFieldFarmId = null;
   if (state.selectedBuild) {
     const hallId = state.buildings.find((b) => b.type === "buildersHall")?.id ?? null;
     if (placeBuilding(state, state.selectedBuild, cell.x, cell.y)) {
@@ -610,11 +640,19 @@ window.addEventListener("keydown", (e) => {
       hudDirty = true;
       return;
     }
+    if (state.placingFieldFarmId) {
+      cancelPlaceField(state);
+      village.setFieldGhost(null);
+      hudDirty = true;
+      renderHud();
+      return;
+    }
     state.selectedBuild = null;
     state.selectedVillagerId = null;
     state.assignWorkplace = false;
     state.buildRotation = 0;
     village.setGhost(null, null);
+    village.setFieldGhost(null);
     if (state.battle) {
       state.battle.selectedIds = [];
       hudDirty = true;
@@ -677,7 +715,7 @@ function showStage(): void {
 }
 
 function chapterLabel(step: number): string {
-  if (step <= 0) return "Chapter 1 · Raise farms";
+  if (step <= 0) return "Chapter 1 · Raise a mill";
   if (step === 1) return "Chapter 1 · Build a Barracks";
   if (step === 2) return "Chapter 1 · Survive a raid";
   return "Chapter 2 · March the World Map";
@@ -760,8 +798,25 @@ function wireSelectedBuildingActions(root: Element, selected: Building): void {
     hudDirty = true;
     renderHud();
   });
+  root.querySelector("#buy-field-btn")?.addEventListener("click", () => {
+    if (state.placingFieldFarmId === selected.id) return;
+    if (beginPlaceField(state, selected.id)) {
+      village.setGhost(null, null);
+      village.setFieldGhost(lastGhostCell);
+      persist();
+    }
+    hudDirty = true;
+    renderHud();
+  });
+  root.querySelector("#cancel-field-btn")?.addEventListener("click", () => {
+    cancelPlaceField(state);
+    village.setFieldGhost(null);
+    hudDirty = true;
+    renderHud();
+  });
   root.querySelector("#move-btn")?.addEventListener("click", () => {
     if (beginMoveBuilding(state, selected.id)) {
+      village.setFieldGhost(null);
       village.setGhost(selected.type, lastGhostCell, state.buildRotation);
       persist();
     }
@@ -790,14 +845,32 @@ function selectedBuildingHtml(selected: Building): string {
   const def = BUILDINGS[selected.type];
   const nextCost =
     selected.level < def.maxLevel ? costLabel(selected.type, selected.level + 1) : "Maxed";
-  const fieldNote =
-    selected.type === "farm"
-      ? `<p class="hint">Fields: ${selected.fields?.length ?? 0} plots (more food).</p>`
-      : "";
   const moving = state.movingBuildingId === selected.id;
   const moveHint = moving
     ? `<p class="hint">Click a plot to place it · Esc cancel · R rotate</p>`
     : `<p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>`;
+
+  if (selected.type === "farm") {
+    const n = selected.fields?.length ?? 0;
+    const cap = maxFarmFields(selected.level);
+    const placing = state.placingFieldFarmId === selected.id;
+    const foodHint = `Food ~${(0.28 * (1 + selected.level * 0.22) + n * 0.48 * (1 + selected.level * 0.1)).toFixed(1)}/s per farmer`;
+    return `
+      <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
+      <p>${def.description}</p>
+      <div class="stat-row"><span>Crop fields</span><span>${n} / ${cap}</span></div>
+      <p class="hint">${foodHint} — more fields mean more food.</p>
+      ${placing ? `<p class="hint">Click meadow plots to plant · Esc stop</p>` : moveHint}
+      <button class="primary" id="buy-field-btn">${placing ? "Placing fields…" : `Buy field (${fieldPlotCostLabel()})`}</button>
+      ${placing ? `<button id="cancel-field-btn">Stop placing</button>` : ""}
+      <button id="upgrade-btn">Upgrade mill</button>
+      <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
+      <button id="rotate-btn">Rotate (R)</button>
+      ${moving ? `<button id="cancel-move-btn">Cancel move</button>` : ""}
+    `;
+  }
+
+  const fieldNote = "";
   return `
     <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
     <p>${def.description}</p>
@@ -1052,10 +1125,12 @@ function renderHud(): void {
         btn.addEventListener("click", () => {
           state.selectedBuild = type;
           state.movingBuildingId = null;
+          state.placingFieldFarmId = null;
           state.buildRotation = 0;
           // Keep Hall selected so this panel stays open
           state.selectedBuildingId = hall.id;
           village.setGhost(type, null, 0);
+          village.setFieldGhost(null);
           flash(state, `${def.name} selected — click a plot to place it.`, 3);
           hudDirty = true;
           renderHud();

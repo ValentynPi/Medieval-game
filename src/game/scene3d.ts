@@ -782,6 +782,27 @@ export class VillageScene {
     this.ghostGroup.add(ring);
   }
 
+  setFieldGhost(cell: { x: number; y: number } | null): void {
+    while (this.ghostGroup.children.length) {
+      const c = this.ghostGroup.children[0];
+      this.ghostGroup.remove(c);
+      this.disposeObject(c);
+    }
+    if (!cell) return;
+    const soil = new THREE.Mesh(
+      new THREE.PlaneGeometry(TILE * 0.9, TILE * 0.9),
+      new THREE.MeshBasicMaterial({
+        color: "#7aaf4a",
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+      }),
+    );
+    soil.rotation.x = -Math.PI / 2;
+    soil.position.set(cell.x * TILE + TILE / 2, 0.1, cell.y * TILE + TILE / 2);
+    this.ghostGroup.add(soil);
+  }
+
   private syncFarmFields(state: GameState): void {
     const sig = state.buildings
       .filter((b) => b.type === "farm")

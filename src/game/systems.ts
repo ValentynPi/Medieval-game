@@ -1,4 +1,4 @@
-import { BATTLE_H, BATTLE_W, BUILDINGS, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, pay, scaleCost, triangleMultiplier } from "./config";
+import { BATTLE_H, BATTLE_W, BUILDINGS, FIELD_PLOT_COST, FOOD_UPKEEP, GRID_H, GRID_W, INSTANT_BUILD, PLACEABLE, TRAIN_COST, TROOP_STATS, canAfford, gridToBattleX, gridToBattleY, maxFarmFields, pay, scaleCost, triangleMultiplier } from "./config";
 import {
   buildingAt,
   clearRoadsAt,
@@ -51,7 +51,6 @@ import type {
   BattleUnit,
   BuildingType,
   ConstructionSite,
-  FieldCell,
   FormationType,
   GameState,
   ResourceId,
@@ -121,7 +120,10 @@ function workerProduction(state: GameState, v: Villager): Resources {
             (f) => f.type === "farm" && f.fields?.some((c) => c.x === gx && c.y === gy),
           );
     if (farm) {
-      out.food = 1.05 * (1 + farm.level * 0.3) + (farm.fields?.length ?? 0) * 0.04;
+      const plots = farm.fields?.length ?? 0;
+      // Mill alone gives a trickle; each placed field adds solid food /s
+      out.food =
+        0.28 * (1 + farm.level * 0.22) + plots * 0.48 * (1 + farm.level * 0.1);
     }
   } else if (v.job === "quarryman") {
     if (b?.type === "quarry") out.stone = 0.95 * (1 + b.level * 0.28);
@@ -138,14 +140,6 @@ function workerProduction(state: GameState, v: Villager): Resources {
   return out;
 }
 
-function facingDelta(rotation: number): { dx: number; dy: number } {
-  const r = ((rotation % 4) + 4) % 4;
-  if (r === 0) return { dx: 0, dy: 1 };
-  if (r === 1) return { dx: 1, dy: 0 };
-  if (r === 2) return { dx: 0, dy: -1 };
-  return { dx: -1, dy: 0 };
-}
-
 function fieldOwnedByOther(
   state: GameState,
   x: number,
@@ -159,33 +153,92 @@ function fieldOwnedByOther(
   return false;
 }
 
-function claimFarmFields(
-  state: GameState,
-  farmX: number,
-  farmY: number,
-  rotation: number,
-  level: number,
-  exceptFarmId?: string,
-): FieldCell[] {
-  const { dx, dy } = facingDelta(rotation);
-  const sideX = -dy;
-  const sideY = dx;
-  const depth = 1 + Math.min(2, level);
-  const width = 3;
-  const fields: FieldCell[] = [];
-  for (let row = 1; row <= depth; row++) {
-    for (let col = -Math.floor(width / 2); col <= Math.floor(width / 2); col++) {
-      const x = farmX + dx * row + sideX * col;
-      const y = farmY + dy * row + sideY * col;
-      if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) continue;
-      if (buildingAt(state, x, y)) continue;
-      if (fieldOwnedByOther(state, x, y, exceptFarmId)) continue;
-      const biome = cellBiome(x, y, state.buildings, state.clearedForest);
-      if (biome !== "meadow" && biome !== "path" && biome !== "forest") continue;
-      fields.push({ x, y });
-    }
+export function fieldPlotCostLabel(): string {
+  const c = FIELD_PLOT_COST;
+  return `${c.wood}w ${c.food}f ${c.gold}g`;
+}
+
+export function beginPlaceField(state: GameState, farmId: string): boolean {
+  if (state.mode !== "village") return false;
+  const farm = state.buildings.find((b) => b.id === farmId && b.type === "farm");
+  if (!farm) return false;
+  const n = farm.fields?.length ?? 0;
+  const cap = maxFarmFields(farm.level);
+  if (n >= cap) {
+    flash(state, `This mill can hold ${cap} fields — upgrade it for more plots.`);
+    return false;
   }
-  return fields;
+  if (!canAfford(state.resources, FIELD_PLOT_COST)) {
+    flash(state, `Need ${fieldPlotCostLabel()} for a crop field.`);
+    return false;
+  }
+  state.placingFieldFarmId = farmId;
+  state.selectedBuildingId = farmId;
+  state.selectedBuild = null;
+  state.movingBuildingId = null;
+  state.selectedVillagerId = null;
+  state.assignWorkplace = false;
+  flash(state, `Place a field (${n}/${cap}) — click a meadow plot. Esc cancel.`, 5);
+  return true;
+}
+
+export function cancelPlaceField(state: GameState): void {
+  if (!state.placingFieldFarmId) return;
+  state.placingFieldFarmId = null;
+  flash(state, "Field placement cancelled.", 2);
+}
+
+export function placeFieldPlot(state: GameState, x: number, y: number): boolean {
+  const farmId = state.placingFieldFarmId;
+  if (!farmId) return false;
+  const farm = state.buildings.find((b) => b.id === farmId && b.type === "farm");
+  if (!farm) {
+    state.placingFieldFarmId = null;
+    return false;
+  }
+  if (!farm.fields) farm.fields = [];
+  const cap = maxFarmFields(farm.level);
+  if (farm.fields.length >= cap) {
+    flash(state, `Field limit reached (${cap}). Upgrade the mill for more.`);
+    state.placingFieldFarmId = null;
+    return false;
+  }
+  if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) {
+    flash(state, "Outside the March.");
+    return false;
+  }
+  if (buildingAt(state, x, y)) {
+    flash(state, "That plot already has a building.");
+    return false;
+  }
+  if (state.constructionSites.some((s) => s.x === x && s.y === y)) {
+    flash(state, "Builders are raising something there.");
+    return false;
+  }
+  if (fieldAt(state, x, y) || fieldOwnedByOther(state, x, y)) {
+    flash(state, "A crop field already covers this plot.");
+    return false;
+  }
+  const biome = cellBiome(x, y, state.buildings, state.clearedForest);
+  if (biome !== "meadow" && biome !== "path" && biome !== "forest") {
+    flash(state, "Fields need meadow, path, or light forest.");
+    return false;
+  }
+  if (!canAfford(state.resources, FIELD_PLOT_COST)) {
+    flash(state, `Need ${fieldPlotCostLabel()} for a crop field.`);
+    state.placingFieldFarmId = null;
+    return false;
+  }
+  state.resources = pay(state.resources, FIELD_PLOT_COST);
+  farm.fields.push({ x, y });
+  const n = farm.fields.length;
+  if (n >= cap) {
+    state.placingFieldFarmId = null;
+    flash(state, `Field planted (${n}/${cap}). Mill is full — upgrade for more plots.`, 4);
+  } else {
+    flash(state, `Field planted (${n}/${cap}). Click another plot or Esc to stop.`, 3);
+  }
+  return true;
 }
 
 export function upkeepPerSecond(state: GameState): number {
@@ -459,14 +512,14 @@ function completeBuilding(
     x,
     y,
     rotation: rot,
-    fields: type === "farm" ? claimFarmFields(state, x, y, rot, 1) : undefined,
+    fields: type === "farm" ? [] : undefined,
   };
   if (type !== "road") clearRoadsAt(state, x, y);
   state.buildings.push(building);
   const roads = autoConnectRoads(state, type, x, y, undefined, rot);
   const roadNote = roads > 0 ? ` Road to Keep (${roads}).` : "";
   if (type === "farm") {
-    flash(state, `Farm finished — ${building.fields?.length ?? 0} field plots.${roadNote}`);
+    flash(state, `Mill finished — buy crop fields on the Mill panel to grow food.${roadNote}`);
   } else if (type === "boat") {
     flash(state, "Boat docked — move troops onto it to sail the river.");
   } else if (type === "road") {
@@ -680,9 +733,6 @@ export function rotateBuilding(state: GameState, id: string): boolean {
     return false;
   }
   b.rotation = (b.rotation + 1) % 4;
-  if (b.type === "farm") {
-    b.fields = claimFarmFields(state, b.x, b.y, b.rotation, b.level, b.id);
-  }
   flash(state, `${BUILDINGS[b.type].name} turned — ${b.rotation * 90}°`, 2);
   return true;
 }
@@ -698,6 +748,7 @@ export function beginMoveBuilding(state: GameState, id: string): boolean {
   state.movingBuildingId = id;
   state.selectedBuildingId = id;
   state.selectedBuild = null;
+  state.placingFieldFarmId = null;
   state.selectedVillagerId = null;
   state.assignWorkplace = false;
   state.buildRotation = b.rotation ?? 0;
@@ -747,9 +798,6 @@ export function moveBuildingTo(state: GameState, id: string, x: number, y: numbe
     b.x = x;
     b.y = y;
     b.rotation = state.buildRotation;
-    if (b.type === "farm") {
-      b.fields = claimFarmFields(state, x, y, b.rotation, b.level, b.id);
-    }
   }
 
   // Keep workplaces following the relocated structure
@@ -776,7 +824,9 @@ export function moveBuildingTo(state: GameState, id: string, x: number, y: numbe
     state,
     roads > 0
       ? `${BUILDINGS[b.type].name} moved — road to Keep (${roads}).`
-      : `${BUILDINGS[b.type].name} moved.`,
+      : b.type === "farm"
+        ? "Mill moved — crop fields stay where you planted them."
+        : `${BUILDINGS[b.type].name} moved.`,
     4,
   );
   return true;
@@ -803,15 +853,17 @@ export function upgradeBuilding(state: GameState, id: string): boolean {
   }
   state.resources = pay(state.resources, cost);
   b.level = next;
-  if (b.type === "farm") {
-    b.fields = claimFarmFields(state, b.x, b.y, b.rotation, b.level, b.id);
-  }
   if (b.type === "keep") {
     refreshKeepHpCap(state);
     state.keepHp = state.keepMaxHp;
     flash(state, `Keep rises to level ${b.level}. New crafts unlock.`);
   } else {
-    flash(state, `${def.name} upgraded to ${b.level}.`);
+    flash(
+      state,
+      b.type === "farm"
+        ? `Mill upgraded to ${b.level} — field cap ${maxFarmFields(b.level)}.`
+        : `${def.name} upgraded to ${b.level}.`,
+    );
     if (b.type === "barracks") {
       const unlocked = (["infantry", "archers", "cavalry"] as TroopType[])
         .map((t) => variantUnlockedAt(t, b.level))

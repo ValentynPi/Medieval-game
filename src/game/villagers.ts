@@ -47,7 +47,7 @@ export const JOB_LABELS: Record<VillagerJob, string> = {
 export const JOB_HINTS: Record<VillagerJob, string> = {
   idle: "Strolls near the Keep — open water drowns them (Bridge or Boat only).",
   woodcutter: "Must work forest plots to clear trees (and earn wood) before you can build there.",
-  farmer: "Must work a Farm or its fields to earn food.",
+  farmer: "Must work a Mill or its crop fields to earn food.",
   quarryman: "Must work a Quarry or rocky ground to earn stone.",
   miner: "Must work a Gold Mine to earn gold and stone.",
   trader: "Must work a Market or the Keep to earn gold.",
