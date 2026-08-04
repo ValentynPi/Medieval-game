@@ -20,9 +20,9 @@ export function gridToBattleY(gy: number): number {
 
 /** Food consumed per second per troop in the field + garrison (kept light so food stays net-positive early) */
 export const FOOD_UPKEEP: Record<TroopType, number> = {
-  infantry: 0.012,
-  archers: 0.01,
-  cavalry: 0.018,
+  infantry: 0.006,
+  archers: 0.005,
+  cavalry: 0.009,
 };
 
 export const EMPTY_COST: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };

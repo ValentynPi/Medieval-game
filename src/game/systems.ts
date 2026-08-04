@@ -71,11 +71,18 @@ export function productionPerSecond(state: GameState): Resources {
 
   // Tiny crown tithe from the Keep only — everything else needs workers on site
   for (const b of state.buildings) {
-    if (b.type !== "keep") continue;
-    const def = BUILDINGS.keep;
-    if (!def.production) continue;
-    for (const key of Object.keys(def.production) as (keyof Resources)[]) {
-      out[key] += (def.production[key] ?? 0) * b.level;
+    if (b.type === "keep") {
+      const def = BUILDINGS.keep;
+      if (!def.production) continue;
+      for (const key of Object.keys(def.production) as (keyof Resources)[]) {
+        out[key] += (def.production[key] ?? 0) * b.level;
+      }
+      continue;
+    }
+    // Mills grind planted fields into food even without a farmer standing there
+    if (b.type === "farm") {
+      const plots = b.fields?.length ?? 0;
+      out.food += 0.06 * b.level + plots * 0.4 * (1 + b.level * 0.08);
     }
   }
 
@@ -121,9 +128,9 @@ function workerProduction(state: GameState, v: Villager): Resources {
           );
     if (farm) {
       const plots = farm.fields?.length ?? 0;
-      // Mill alone gives a trickle; each placed field adds solid food /s
+      // Farmer bonus on top of the mill's passive field yield
       out.food =
-        0.28 * (1 + farm.level * 0.22) + plots * 0.48 * (1 + farm.level * 0.1);
+        0.35 * (1 + farm.level * 0.2) + plots * 0.18 * (1 + farm.level * 0.08);
     }
   } else if (v.job === "quarryman") {
     if (b?.type === "quarry") out.stone = 0.95 * (1 + b.level * 0.28);

@@ -732,7 +732,7 @@ function renderResources(): void {
   resourcesEl.innerHTML = `
     <div class="res wood" title="Needs woodcutters working a Lumber Camp or forest"><b>Wood</b>${fmt(r.wood)}<small>${rate(p.wood)}</small></div>
     <div class="res stone" title="Needs quarrymen / miners on site"><b>Stone</b>${fmt(r.stone)}<small>${rate(p.stone)}</small></div>
-    <div class="res food" title="Needs farmers on farms (minus army ration)"><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
+    <div class="res food" title="Mills grind crop fields into food (minus army ration). Farmers add a bonus while working."><b>Food</b>${fmt(r.food)}<small class="${foodClass}">${rate(netFood)}</small></div>
     <div class="res gold" title="Needs traders at Market/Keep (+ tiny Keep tithe)"><b>Gold</b>${fmt(r.gold)}<small>${rate(p.gold)}</small></div>
     <div class="res power" title="Realm Power = troops (${power.troops} levies → ${power.military}) + city (${power.city} from Keep, halls, defenses, folk)"><b>Power</b>${fmt(power.total)}<small>${power.military}⚔ ${power.city}🏛</small></div>
   `;
@@ -854,7 +854,7 @@ function selectedBuildingHtml(selected: Building): string {
     const n = selected.fields?.length ?? 0;
     const cap = maxFarmFields(selected.level);
     const placing = state.placingFieldFarmId === selected.id;
-    const foodHint = `Food ~${(0.28 * (1 + selected.level * 0.22) + n * 0.48 * (1 + selected.level * 0.1)).toFixed(1)}/s per farmer`;
+    const foodHint = `~${(0.06 * selected.level + n * 0.4 * (1 + selected.level * 0.08)).toFixed(1)}/s from fields (+farmer bonus while working)`;
     return `
       <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
       <p>${def.description}</p>

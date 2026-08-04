@@ -726,7 +726,7 @@ export function selectedVillager(state: GameState): Villager | undefined {
 export function villagerJobYieldLabel(job: VillagerJob): string {
   if (job === "builder") return "Raises buildings";
   if (job === "woodcutter") return "+wood /s while working";
-  if (job === "farmer") return "+food /s while working";
+  if (job === "farmer") return "+food /s from mill fields (+bonus while working)";
   if (job === "quarryman") return "+stone /s while working";
   if (job === "miner") return "+stone & gold /s";
   if (job === "trader") return "+gold /s";
