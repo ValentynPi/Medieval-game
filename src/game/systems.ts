@@ -81,8 +81,7 @@ export function productionPerSecond(state: GameState): Resources {
     }
     // Mills grind planted fields into food even without a farmer standing there
     if (b.type === "farm") {
-      const plots = b.fields?.length ?? 0;
-      out.food += 0.06 * b.level + plots * 0.4 * (1 + b.level * 0.08);
+      out.food += millFoodPerSecond(b);
     }
   }
 
@@ -129,8 +128,7 @@ function workerProduction(state: GameState, v: Villager): Resources {
     if (farm) {
       const plots = farm.fields?.length ?? 0;
       // Farmer bonus on top of the mill's passive field yield
-      out.food =
-        0.35 * (1 + farm.level * 0.2) + plots * 0.18 * (1 + farm.level * 0.08);
+      out.food = 0.45 * (1 + farm.level * 0.15) + plots * 0.25;
     }
   } else if (v.job === "quarryman") {
     if (b?.type === "quarry") out.stone = 0.95 * (1 + b.level * 0.28);
@@ -162,7 +160,20 @@ function fieldOwnedByOther(
 
 export function fieldPlotCostLabel(): string {
   const c = FIELD_PLOT_COST;
-  return `${c.wood}w ${c.food}f ${c.gold}g`;
+  const parts = [
+    c.wood ? `${c.wood}w` : "",
+    c.stone ? `${c.stone}s` : "",
+    c.food ? `${c.food}f` : "",
+    c.gold ? `${c.gold}g` : "",
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+/** Passive food /s from one mill and its planted fields (no farmer required). */
+export function millFoodPerSecond(farm: { level: number; fields?: { x: number; y: number }[] }): number {
+  const plots = farm.fields?.length ?? 0;
+  // Mill trickle + strong per-field yield so each planted plot clearly lifts the food rate
+  return 0.1 * farm.level + plots * 1.15 * (1 + (farm.level - 1) * 0.08);
 }
 
 export function beginPlaceField(state: GameState, farmId: string): boolean {

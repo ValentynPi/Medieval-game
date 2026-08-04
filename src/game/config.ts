@@ -20,9 +20,9 @@ export function gridToBattleY(gy: number): number {
 
 /** Food consumed per second per troop in the field + garrison (kept light so food stays net-positive early) */
 export const FOOD_UPKEEP: Record<TroopType, number> = {
-  infantry: 0.006,
-  archers: 0.005,
-  cavalry: 0.009,
+  infantry: 0.005,
+  archers: 0.004,
+  cavalry: 0.008,
 };
 
 export const EMPTY_COST: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
@@ -223,8 +223,8 @@ export const INSTANT_BUILD: BuildingType[] = [
 
 export const HIRE_BUILDER_COST: Resources = { wood: 0, stone: 0, food: 28, gold: 22 };
 
-/** Cost to add one crop plot to a mill */
-export const FIELD_PLOT_COST: Resources = { wood: 6, stone: 0, food: 4, gold: 3 };
+/** Cost to add one crop plot to a mill (no food — fields are what make food) */
+export const FIELD_PLOT_COST: Resources = { wood: 8, stone: 0, food: 0, gold: 4 };
 
 /** Soft cap: base plots + extra per mill level */
 export function maxFarmFields(level: number): number {
