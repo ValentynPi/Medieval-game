@@ -330,6 +330,9 @@ document.querySelector("#nav-world")!.addEventListener("click", () => {
 });
 
 window.addEventListener("resize", () => village.resize());
+if (typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => village.resize()).observe(document.querySelector("#stage")!);
+}
 
 canvas.addEventListener("pointermove", (e) => {
   if (state.mode !== "village") return;

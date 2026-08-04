@@ -29,15 +29,18 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   background: radial-gradient(ellipse at top, #1c2830 0%, #0f1418 60%);
 }
 
 #app {
-  min-height: 100vh;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding-bottom: 64px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -45,11 +48,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   background: rgba(12, 16, 14, 0.9);
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 5;
 }
 
@@ -154,9 +156,11 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 12px;
-  padding: 12px;
+  padding: 10px 12px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
 }
 
 .layout.with-left {
@@ -170,7 +174,7 @@ body {
 @media (max-width: 1100px) {
   .layout,
   .layout.with-left {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 260px;
   }
 }
 
@@ -182,7 +186,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 160px);
+  min-height: 0;
+  height: 100%;
+  max-height: none;
   overflow: auto;
   backdrop-filter: blur(6px);
 }
@@ -206,15 +212,19 @@ body {
 .stage-wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
 }
 
 .stage {
   position: relative;
   width: 100%;
-  height: min(84vh, 920px);
-  min-height: 560px;
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
@@ -234,6 +244,7 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .admin-toggle {
@@ -381,13 +392,19 @@ button:disabled {
 }
 
 .msg {
-  min-height: 38px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  min-height: 0;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid var(--line);
   background: rgba(36, 48, 31, 0.95);
   color: var(--ink);
   font-size: 0.92rem;
+  pointer-events: none;
 }
 
 .msg:empty,
@@ -550,18 +567,22 @@ button:disabled {
 
 .legend {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   color: var(--muted);
   justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .bottom-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
   z-index: 8;
   display: flex;
   gap: 8px;
@@ -569,6 +590,7 @@ button:disabled {
   padding: 8px 12px;
   background: rgba(12, 16, 14, 0.94);
   border-top: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .bottom-nav button {
