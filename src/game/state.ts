@@ -23,6 +23,19 @@ function makeKeep(): Building {
   };
 }
 
+function makeBuildersHall(): Building {
+  const kx = Math.floor(GRID_W / 2) - 1;
+  const ky = Math.floor(GRID_H / 2) - 1;
+  return {
+    id: uid("bld"),
+    type: "buildersHall",
+    level: 1,
+    x: kx + 2,
+    y: ky,
+    rotation: 0,
+  };
+}
+
 function makeSites(): WorldSite[] {
   return [
     {
@@ -209,7 +222,7 @@ export function createInitialState(): GameState {
   return {
     mode: "intro",
     resources: { wood: 200, stone: 130, food: 180, gold: 110 },
-    buildings: [makeKeep()],
+    buildings: [makeKeep(), makeBuildersHall()],
     troops: { infantry: 8, archers: 5, cavalry: 2 },
     garrison: { infantry: 5, archers: 4, cavalry: 1 },
     hero: {
@@ -230,8 +243,8 @@ export function createInitialState(): GameState {
     day: 1,
     timeToRaid: 75,
     raidCount: 0,
-    message: "A crown sits heavy. Raise farms, train levies, survive the raids.",
-    messageTimer: 6,
+    message: "Your Keep and Builders Hall stand ready — click the Hall to raise the March.",
+    messageTimer: 7,
     selectedBuild: null,
     selectedBuildingId: null,
     movingBuildingId: null,

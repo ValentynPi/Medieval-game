@@ -261,7 +261,7 @@ export const BUILD_MENU_SECTIONS: { title: string; types: BuildingType[] }[] = [
   { title: "River crossing", types: ["bridge", "boat"] },
   { title: "Economy", types: ["farm", "lumber", "quarry", "mine", "market"] },
   { title: "Terrain", types: ["road", "forest", "mountain"] },
-  { title: "Military & civic", types: ["barracks", "buildersHall", "tower", "wall", "blacksmith"] },
+  { title: "Military & civic", types: ["barracks", "tower", "wall", "blacksmith"] },
 ];
 
 export function scaleCost(base: Resources, level: number, growth: number): Resources {

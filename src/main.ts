@@ -115,11 +115,11 @@ app.innerHTML = `
       <h1>The crown is yours</h1>
       <p>Raise a stylized March village in 3D — thatched halls, torchlight, and raids at the gate.</p>
       <ul>
-        <li>Place farms &amp; camps, upgrade the Keep</li>
+        <li>Click the Builders Hall to choose what to raise, then click the map</li>
+        <li>Hire builders at the Hall — they walk out and finish most buildings</li>
         <li>Assign townsfolk to work — resources only rise while they work on site</li>
         <li>Barracks: garrison defends raids; leftover troops march the World Map</li>
-        <li>Builders Hall → hire builders → they raise farms, halls, and bridges</li>
-        <li>Townsfolk path around rivers (Build → Bridge on blue water) · Win: Keep 4 + clear camps</li>
+        <li>Townsfolk path around rivers (Bridge on blue water) · Win: Keep 4 + clear camps</li>
       </ul>
       <button class="primary" id="start-btn">Take the throne</button>
       <button id="continue-btn" class="hidden">Continue saved realm</button>
@@ -457,7 +457,7 @@ canvas.addEventListener("click", (e) => {
       if (picked.type === "barracks") {
         flash(state, "Training camp open — drill recruits on the right.", 3);
       } else if (picked.type === "buildersHall") {
-        flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
+        flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
       }
       renderHud();
       return;
@@ -478,7 +478,7 @@ canvas.addEventListener("click", (e) => {
     if (existing.type === "barracks") {
       flash(state, "Training camp open — drill recruits on the right.", 3);
     } else if (existing.type === "buildersHall") {
-      flash(state, "Builders Hall — hire a crew, then place buildings for them to raise.", 4);
+      flash(state, "Builders Hall — hire a crew and choose what to build on the right.", 4);
     }
     renderHud();
     return;
@@ -488,7 +488,12 @@ canvas.addEventListener("click", (e) => {
   state.assignWorkplace = false;
   state.movingBuildingId = null;
   if (state.selectedBuild) {
-    if (placeBuilding(state, state.selectedBuild, cell.x, cell.y)) persist();
+    const hallId = state.buildings.find((b) => b.type === "buildersHall")?.id ?? null;
+    if (placeBuilding(state, state.selectedBuild, cell.x, cell.y)) {
+      persist();
+      // Stay in the Hall build menu after placing
+      if (hallId) state.selectedBuildingId = hallId;
+    }
   }
   renderHud();
 });
@@ -835,46 +840,12 @@ function renderHud(): void {
     }
   } else {
     leftPanel.innerHTML = `
-    <h2>Build</h2>
-    <p class="hint"><strong>Bridge</strong> is under River crossing — select it, then click blue river water. Needs a Builders Hall crew.</p>
-    <div id="build-sections"></div>
     <h2>Selected</h2>
     <div id="selected-box"></div>
   `;
   }
 
   if (state.mode === "village") {
-  const sections = leftPanel.querySelector("#build-sections")!;
-  for (const section of BUILD_MENU_SECTIONS) {
-    const heading = document.createElement("h3");
-    heading.className = "build-section-title";
-    heading.textContent = section.title;
-    sections.appendChild(heading);
-    const grid = document.createElement("div");
-    grid.className = "build-grid";
-    for (const type of section.types) {
-      if (!PLACEABLE.includes(type)) continue;
-      const def = BUILDINGS[type];
-      const locked = keepLevel(state) < def.keepRequired;
-      const btn = document.createElement("button");
-      btn.className = state.selectedBuild === type ? "active" : "";
-      if (type === "bridge") btn.classList.add("build-bridge");
-      btn.disabled = locked;
-      btn.innerHTML = `<strong>${def.name}</strong><small>${locked ? `Needs Keep ${def.keepRequired}` : costLabel(type)}</small>`;
-      btn.addEventListener("click", () => {
-        state.selectedBuild = type;
-        state.selectedBuildingId = null;
-        state.movingBuildingId = null;
-        state.buildRotation = 0;
-        village.setGhost(type, null, 0);
-        hudDirty = true;
-        renderHud();
-      });
-      grid.appendChild(btn);
-    }
-    sections.appendChild(grid);
-  }
-
   const selectedBox = leftPanel.querySelector("#selected-box")!;
   const selected = state.buildings.find((b) => b.id === state.selectedBuildingId);
   if (selected) {
@@ -889,6 +860,10 @@ function renderHud(): void {
     const moveHint = moving
       ? `<p class="hint">Click a plot to place it · Esc cancel · R rotate</p>`
       : `<p class="hint">Facing: ${(selected.rotation ?? 0) * 90}° · Next: ${nextCost}</p>`;
+    const hallHint =
+      selected.type === "buildersHall"
+        ? `<p class="hint">Use the right panel to hire builders and choose what to build.</p>`
+        : "";
     if (selected.type === "barracks") {
       selectedBox.innerHTML = `
       <div class="stat-row"><span>Training Camp</span><span>Lv ${selected.level}</span></div>
@@ -905,6 +880,7 @@ function renderHud(): void {
       <div class="stat-row"><span>${def.name}</span><span>Lv ${selected.level}</span></div>
       <p>${def.description}</p>
       ${fieldNote}
+      ${hallHint}
       ${moveHint}
       <button class="primary" id="upgrade-btn">Upgrade</button>
       <button id="move-btn">${moving ? "Moving…" : "Move (M)"}</button>
@@ -942,7 +918,7 @@ function renderHud(): void {
       renderHud();
     });
   } else {
-    selectedBox.innerHTML = `<p class="hint">Click a building to see its level and options. Roads are pavement and cannot be selected.</p>`;
+    selectedBox.innerHTML = `<p class="hint">Click the Builders Hall to choose buildings, or select any structure for upgrades.</p>`;
   }
   }
 
@@ -1051,16 +1027,54 @@ function renderHud(): void {
     const crew = builderCount(state);
     const cap = builderCap(state);
     const sites = state.constructionSites.length;
+    const placing = state.selectedBuild
+      ? `Placing: ${BUILDINGS[state.selectedBuild].name} — click the map`
+      : "Choose a building below, then click the map";
     rightPanel.innerHTML = `
       <h2>Builders Hall</h2>
-      <p class="hint">Lv ${hall.level} · Hire a crew, then place buildings — they walk the land and raise them.</p>
+      <p class="hint">Lv ${hall.level} · Hire a crew, then choose what to raise.</p>
       <div class="stat-row"><span>Builders</span><span>${crew} / ${cap}</span></div>
       <div class="stat-row"><span>Sites building</span><span>${sites}</span></div>
       <p class="hint">Hire cost: ${HIRE_BUILDER_COST.food} food · ${HIRE_BUILDER_COST.gold} gold</p>
       <button class="primary" id="hire-builder-btn">Hire builder</button>
       <button id="upgrade-hall-btn">Upgrade Hall</button>
-      <p class="hint">Rivers block footpaths until you place a Bridge.</p>
+      <h2>Build</h2>
+      <p class="hint">${placing}</p>
+      <div id="hall-build-sections"></div>
     `;
+    const sections = rightPanel.querySelector("#hall-build-sections")!;
+    for (const section of BUILD_MENU_SECTIONS) {
+      const heading = document.createElement("h3");
+      heading.className = "build-section-title";
+      heading.textContent = section.title;
+      sections.appendChild(heading);
+      const grid = document.createElement("div");
+      grid.className = "build-grid";
+      for (const type of section.types) {
+        if (!PLACEABLE.includes(type)) continue;
+        if (type === "buildersHall") continue;
+        const def = BUILDINGS[type];
+        const locked = keepLevel(state) < def.keepRequired;
+        const btn = document.createElement("button");
+        btn.className = state.selectedBuild === type ? "active" : "";
+        if (type === "bridge") btn.classList.add("build-bridge");
+        btn.disabled = locked;
+        btn.innerHTML = `<strong>${def.name}</strong><small>${locked ? `Needs Keep ${def.keepRequired}` : costLabel(type)}</small>`;
+        btn.addEventListener("click", () => {
+          state.selectedBuild = type;
+          state.movingBuildingId = null;
+          state.buildRotation = 0;
+          // Keep Hall selected so this panel stays open
+          state.selectedBuildingId = hall.id;
+          village.setGhost(type, null, 0);
+          flash(state, `${def.name} selected — click a plot to place it.`, 3);
+          hudDirty = true;
+          renderHud();
+        });
+        grid.appendChild(btn);
+      }
+      sections.appendChild(grid);
+    }
     rightPanel.querySelector("#hire-builder-btn")?.addEventListener("click", () => {
       if (hireBuilder(state)) persist();
       hudDirty = true;
