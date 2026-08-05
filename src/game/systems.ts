@@ -44,7 +44,7 @@ import {
   troopVariantForLevel,
   variantUnlockedAt,
 } from "./combat";
-import { biomeAt, buildBlockedReason, cellBiome, hasStandingTimber, isBuildableCell, isWaterBiome } from "./worldGen";
+import { biomeAt, buildBlockedReason, cellBiomeState, hasStandingTimber, isBuildableCell, isWaterBiome } from "./worldGen";
 import { registerFinishSite, repathVillagersAfterCrossing, tickVillagers } from "./villagers";
 import { bridgeSpanInfo } from "./pathfind";
 import { autoConnectRoads } from "./roads";
@@ -108,7 +108,7 @@ function workerProduction(state: GameState, v: Villager): Resources {
   const gx = v.workGx;
   const gy = v.workGy;
   const b = buildingAt(state, gx, gy);
-  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
+  const biome = cellBiomeState(state, gx, gy);
   const out: Resources = { wood: 0, stone: 0, food: 0, gold: 0 };
 
   if (v.job === "woodcutter") {
@@ -239,7 +239,7 @@ export function placeFieldPlot(state: GameState, x: number, y: number): boolean 
     flash(state, "A crop field already covers this plot.");
     return false;
   }
-  const biome = cellBiome(x, y, state.buildings, state.clearedForest);
+  const biome = cellBiomeState(state, x, y);
   if (biome !== "meadow" && biome !== "path" && biome !== "forest") {
     flash(state, "Fields need meadow, path, or light forest.");
     return false;

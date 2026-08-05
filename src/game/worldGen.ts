@@ -1,4 +1,6 @@
 import { GRID_H, GRID_W, TILE } from "./config";
+import { hasRoadAtFast, isForestClearedFast, structureAtFast } from "./spatial";
+import type { GameState } from "./types";
 
 export type Biome =
   | "meadow"
@@ -377,6 +379,22 @@ export function biomeAt(gx: number, gy: number): Biome {
   return layout.biomes[gy][gx];
 }
 
+/** Natural biome plus player overlays — O(1) via spatial index. */
+export function cellBiomeState(state: GameState, gx: number, gy: number): Biome {
+  if (hasRoadAtFast(state, gx, gy)) return "path";
+  const s = structureAtFast(state, gx, gy);
+  if (s?.type === "forest") return "forest";
+  if (s?.type === "mountain") return "mountain";
+  const natural = biomeAt(gx, gy);
+  if (
+    (natural === "forest" || natural === "deep_forest") &&
+    isForestClearedFast(state, gx, gy)
+  ) {
+    return "meadow";
+  }
+  return natural;
+}
+
 /** Natural biome plus player-laid road / forest / mountain plots */
 export function cellBiome(
   gx: number,
@@ -384,20 +402,23 @@ export function cellBiome(
   buildings?: { type: string; x: number; y: number }[],
   clearedForest?: number[],
 ): Biome {
-  if (buildings) {
-    const mark = buildings.find(
-      (b) => b.x === gx && b.y === gy && (b.type === "road" || b.type === "forest" || b.type === "mountain"),
-    );
-    if (mark?.type === "road") return "path";
-    if (mark?.type === "forest") return "forest";
-    if (mark?.type === "mountain") return "mountain";
+  if (buildings?.length) {
+    for (let i = 0; i < buildings.length; i++) {
+      const b = buildings[i];
+      if (b.x !== gx || b.y !== gy) continue;
+      if (b.type === "road") return "path";
+      if (b.type === "forest") return "forest";
+      if (b.type === "mountain") return "mountain";
+    }
   }
   const natural = biomeAt(gx, gy);
-  if (
-    (natural === "forest" || natural === "deep_forest") &&
-    clearedForest?.includes(gy * GRID_W + gx)
-  ) {
-    return "meadow";
+  if (natural === "forest" || natural === "deep_forest") {
+    const key = gy * GRID_W + gx;
+    if (clearedForest) {
+      for (let i = 0; i < clearedForest.length; i++) {
+        if (clearedForest[i] === key) return "meadow";
+      }
+    }
   }
   return natural;
 }
@@ -408,16 +429,25 @@ export function forestCellKey(gx: number, gy: number): number {
 
 /** Standing trees block construction until a woodcutter clears the plot. */
 export function hasStandingTimber(
-  state: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+  state: GameState | { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
   gx: number,
   gy: number,
 ): boolean {
-  if (state.clearedForest.includes(forestCellKey(gx, gy))) {
-    // Cleared natural woods — planted forest building still counts as timber
-    return state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy);
+  const full = state as GameState;
+  if (full.constructionSites && full.resources) {
+    if (isForestClearedFast(full, gx, gy)) {
+      return structureAtFast(full, gx, gy)?.type === "forest";
+    }
+    if (structureAtFast(full, gx, gy)?.type === "forest") return true;
+    if (hasRoadAtFast(full, gx, gy)) return false;
+  } else {
+    const key = forestCellKey(gx, gy);
+    if (state.clearedForest.includes(key)) {
+      return state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy);
+    }
+    if (state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy)) return true;
+    if (state.buildings.some((b) => b.type === "road" && b.x === gx && b.y === gy)) return false;
   }
-  if (state.buildings.some((b) => b.type === "forest" && b.x === gx && b.y === gy)) return true;
-  if (state.buildings.some((b) => b.type === "road" && b.x === gx && b.y === gy)) return false;
   const b = biomeAt(gx, gy);
   return b === "forest" || b === "deep_forest";
 }
@@ -425,22 +455,32 @@ export function hasStandingTimber(
 export function isBuildableCell(
   gx: number,
   gy: number,
-  state?: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+  state?: GameState | { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
 ): boolean {
   if (state && hasStandingTimber(state, gx, gy)) return false;
-  const b = state ? cellBiome(gx, gy, state.buildings, state.clearedForest) : biomeAt(gx, gy);
+  const b =
+    state && "resources" in state
+      ? cellBiomeState(state as GameState, gx, gy)
+      : state
+        ? cellBiome(gx, gy, state.buildings, state.clearedForest)
+        : biomeAt(gx, gy);
   return b !== "deep_forest" && b !== "water" && b !== "water_shore" && b !== "mountain" && b !== "forest";
 }
 
 export function buildBlockedReason(
   gx: number,
   gy: number,
-  state?: { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
+  state?: GameState | { buildings: { type: string; x: number; y: number }[]; clearedForest: number[] },
 ): string | null {
   if (state && hasStandingTimber(state, gx, gy)) {
     return "Trees block this plot — assign a woodcutter to clear them.";
   }
-  const b = state ? cellBiome(gx, gy, state.buildings, state.clearedForest) : biomeAt(gx, gy);
+  const b =
+    state && "resources" in state
+      ? cellBiomeState(state as GameState, gx, gy)
+      : state
+        ? cellBiome(gx, gy, state.buildings, state.clearedForest)
+        : biomeAt(gx, gy);
   if (b === "water" || b === "water_shore") return "Water — place a Bridge to cross here.";
   if (b === "mountain") return "Mountains — only Gold Mines can be dug here.";
   if (b === "deep_forest" || b === "forest") {

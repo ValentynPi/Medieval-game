@@ -1,25 +1,12 @@
 import { GRID_H, GRID_W } from "./config";
 import { hasRoadAt } from "./state";
-import { biomeAt, cellBiome, isWaterBiome } from "./worldGen";
+import { hasWaterCrossingFast, isForestClearedFast, structureAtFast } from "./spatial";
+import { biomeAt, isWaterBiome, type Biome } from "./worldGen";
 import type { GameState } from "./types";
-
-function buildingCovers(b: { x: number; y: number; span?: { x: number; y: number }[] }, gx: number, gy: number): boolean {
-  if (b.x === gx && b.y === gy) return true;
-  return !!b.span?.some((c) => c.x === gx && c.y === gy);
-}
 
 /** Safe to stand on water: finished Bridge/Boat, or a bridge still under construction. */
 export function hasWaterCrossing(state: GameState, gx: number, gy: number): boolean {
-  if (
-    state.buildings.some(
-      (b) => (b.type === "bridge" || b.type === "boat") && buildingCovers(b, gx, gy),
-    )
-  ) {
-    return true;
-  }
-  return state.constructionSites.some(
-    (s) => (s.type === "bridge" || s.type === "boat") && buildingCovers(s, gx, gy),
-  );
+  return hasWaterCrossingFast(state, gx, gy);
 }
 
 /**
@@ -83,22 +70,38 @@ export function bridgeSpanCells(gx: number, gy: number): { x: number; y: number 
   return bridgeSpanInfo(gx, gy)?.cells ?? [{ x: gx, y: gy }];
 }
 
+/** Fast biome for pathing — avoids scanning the buildings array each cell. */
+function pathBiome(state: GameState, gx: number, gy: number): Biome {
+  if (hasRoadAt(state, gx, gy)) return "path";
+  const s = structureAtFast(state, gx, gy);
+  if (s?.type === "forest") return "forest";
+  if (s?.type === "mountain") return "mountain";
+  const natural = biomeAt(gx, gy);
+  if (
+    (natural === "forest" || natural === "deep_forest") &&
+    isForestClearedFast(state, gx, gy)
+  ) {
+    return "meadow";
+  }
+  return natural;
+}
+
 /**
  * Walkable on land. Any blue river/lake tile (channel or bank) needs a Bridge or Boat.
  */
 export function isFootWalkable(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
-  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
-  if (isWaterBiome(biome)) return hasWaterCrossing(state, gx, gy);
+  const biome = pathBiome(state, gx, gy);
+  if (isWaterBiome(biome)) return hasWaterCrossingFast(state, gx, gy);
   return true;
 }
 
 /** Blue tiles without Bridge/Boat — townsfolk must leave or drown. */
 export function isDrowningCell(state: GameState, gx: number, gy: number): boolean {
   if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
-  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
+  const biome = pathBiome(state, gx, gy);
   if (!isWaterBiome(biome)) return false;
-  return !hasWaterCrossing(state, gx, gy);
+  return !hasWaterCrossingFast(state, gx, gy);
 }
 
 export function nearestWalkable(
@@ -125,6 +128,52 @@ export function nearestWalkable(
 
 type Node = { x: number; y: number; g: number; f: number; px: number; py: number };
 
+/** Binary min-heap on f-score — avoids O(n) open-list scans on the large map. */
+class MinHeap {
+  private readonly data: Node[] = [];
+
+  get length(): number {
+    return this.data.length;
+  }
+
+  push(n: Node): void {
+    const d = this.data;
+    d.push(n);
+    let i = d.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (d[p].f <= d[i].f) break;
+      const t = d[p];
+      d[p] = d[i];
+      d[i] = t;
+      i = p;
+    }
+  }
+
+  pop(): Node | undefined {
+    const d = this.data;
+    if (!d.length) return undefined;
+    const top = d[0];
+    const last = d.pop()!;
+    if (!d.length) return top;
+    d[0] = last;
+    let i = 0;
+    for (;;) {
+      const l = i * 2 + 1;
+      const r = l + 1;
+      let smallest = i;
+      if (l < d.length && d[l].f < d[smallest].f) smallest = l;
+      if (r < d.length && d[r].f < d[smallest].f) smallest = r;
+      if (smallest === i) break;
+      const t = d[i];
+      d[i] = d[smallest];
+      d[smallest] = t;
+      i = smallest;
+    }
+    return top;
+  }
+}
+
 /**
  * A* on the village grid. Returns cell-center waypoints (continuous coords),
  * or null if unreachable within the search budget.
@@ -150,9 +199,21 @@ export function findPath(
   }
 
   const key = (x: number, y: number) => y * GRID_W + x;
-  const open: Node[] = [];
+  const open = new MinHeap();
   const came = new Map<number, Node>();
   const gScore = new Map<number, number>();
+  /** Cache walkability for this search — same cell checked many times via diagonals. */
+  const walkCache = new Map<number, boolean>();
+  const walkable = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return false;
+    const k = key(x, y);
+    let v = walkCache.get(k);
+    if (v === undefined) {
+      v = isFootWalkable(state, x, y);
+      walkCache.set(k, v);
+    }
+    return v;
+  };
 
   const h0 = Math.hypot(gx - sx, gy - sy);
   const startNode: Node = { x: sx, y: sy, g: 0, f: h0, px: sx, py: sy };
@@ -176,13 +237,10 @@ export function findPath(
 
   while (open.length && steps < MAX_STEPS) {
     steps++;
-    let bestI = 0;
-    for (let i = 1; i < open.length; i++) {
-      if (open[i].f < open[bestI].f) bestI = i;
-    }
-    const cur = open[bestI];
-    open[bestI] = open[open.length - 1];
-    open.pop();
+    const cur = open.pop()!;
+    const curG = gScore.get(key(cur.x, cur.y));
+    // Stale heap entry after a better path was found
+    if (curG !== undefined && cur.g > curG + 1e-6) continue;
 
     if (cur.x === gx && cur.y === gy) {
       const cells: { x: number; y: number }[] = [];
@@ -197,7 +255,6 @@ export function findPath(
         n = came.get(key(n.px, n.py));
       }
       cells.reverse();
-      // Smooth: drop collinear points, keep bridges and turns
       const simplified = simplifyPath(state, cells);
       return simplified.map((c) => ({
         x: c.x + 0.5 + (Math.random() - 0.5) * 0.15,
@@ -208,20 +265,18 @@ export function findPath(
     for (const [dx, dy] of dirs) {
       const nx = cur.x + dx;
       const ny = cur.y + dy;
-      if (!isFootWalkable(state, nx, ny)) continue;
-      // No cutting corners through water
+      if (!walkable(nx, ny)) continue;
       if (dx !== 0 && dy !== 0) {
-        if (!isFootWalkable(state, cur.x + dx, cur.y) || !isFootWalkable(state, cur.x, cur.y + dy)) {
+        if (!walkable(cur.x + dx, cur.y) || !walkable(cur.x, cur.y + dy)) {
           continue;
         }
       }
       const stepCost = dx !== 0 && dy !== 0 ? 1.414 : 1;
-      // Prefer roads and bridges so townsfolk funnel across crossings
-      const biome = cellBiome(nx, ny, state.buildings, state.clearedForest);
-      const onBridge = hasWaterCrossing(state, nx, ny);
+      const biome = pathBiome(state, nx, ny);
+      const onBridge = hasWaterCrossingFast(state, nx, ny);
       const terrain = onBridge
         ? 0.55
-        : biome === "path" || hasRoadAt(state, nx, ny)
+        : biome === "path"
           ? 0.82
           : biome === "deep_forest"
             ? 1.35
@@ -257,9 +312,7 @@ function simplifyPath(
     const prev = out[out.length - 1];
     const cur = cells[i];
     const next = cells[i + 1];
-    const onBridge = state.buildings.some(
-      (b) => b.type === "bridge" && buildingCovers(b, cur.x, cur.y),
-    );
+    const onBridge = hasWaterCrossingFast(state, cur.x, cur.y);
     const ax = cur.x - prev.x;
     const ay = cur.y - prev.y;
     const bx = next.x - cur.x;

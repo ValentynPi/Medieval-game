@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GRID_W, TILE } from "./config";
 import type { TreeSlot } from "./worldGen";
 
-const CHUNK = 16; // cells per chunk side
+const CHUNK = 24; // cells per chunk side — fewer InstancedMeshes, same tree density
 /** How far from camera (in world units) chunks stay visible */
 export const TREE_VIEW_RADIUS = 78;
 

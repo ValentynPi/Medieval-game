@@ -61,6 +61,13 @@ export class VillageScene {
   private forestGroup: THREE.Group | null = null;
   private forestClearedSig = -1;
   private forestCullAcc = 0;
+  private shadowAcc = 0;
+  private lastShadowCamX = Number.NaN;
+  private lastShadowCamZ = Number.NaN;
+  private roadDirtMesh: THREE.InstancedMesh | null = null;
+  private roadStripeMesh: THREE.InstancedMesh | null = null;
+  private roadInstanceSig = "";
+  private readonly roadDummy = new THREE.Object3D();
   private readonly canvas: HTMLCanvasElement;
   private readonly host: HTMLElement;
 
@@ -73,9 +80,11 @@ export class VillageScene {
       alpha: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -215,6 +224,7 @@ export class VillageScene {
       }
       waterMesh.count = wi;
       waterMesh.instanceMatrix.needsUpdate = true;
+      waterMesh.frustumCulled = true;
       this.root.add(waterMesh);
     }
 
@@ -374,6 +384,7 @@ export class VillageScene {
     this.camera.position.copy(this.target).add(this.camOffset);
     this.camera.lookAt(this.target);
     this.sun.target.position.copy(this.target);
+    this.sun.position.set(this.target.x + 45, 55, this.target.z + 20);
   }
 
   resize(): void {
@@ -880,15 +891,20 @@ export class VillageScene {
         const el = css.element as HTMLDivElement;
         const selected = state.selectedVillagerId === v.id;
         const busy = v.phase === "work" || v.phase === "build";
-        el.className = `vil-label${selected ? " selected" : ""}${busy ? " working" : ""}`;
-        el.textContent = selected
+        const text = selected
           ? `${v.name} · ${JOB_LABELS[v.job]}`
           : busy
             ? v.phase === "build"
               ? "Building…"
               : JOB_LABELS[v.job]
             : "";
-        el.style.display = selected || busy ? "block" : "none";
+        const labelKey = `${selected ? 1 : 0}:${busy ? 1 : 0}:${text}`;
+        if (mesh.userData.labelKey !== labelKey) {
+          mesh.userData.labelKey = labelKey;
+          el.className = `vil-label${selected ? " selected" : ""}${busy ? " working" : ""}`;
+          el.textContent = text;
+          el.style.display = selected || busy ? "block" : "none";
+        }
       }
     }
   }
@@ -948,18 +964,24 @@ export class VillageScene {
   syncBuildings(state: GameState): void {
     // Cheap numeric fingerprint — avoid giant string joins over every road tile each frame
     let sig = state.buildings.length * 2654435761;
+    let roadCount = 0;
     for (const b of state.buildings) {
       sig = (sig ^ ((b.x + 1) * 73856093) ^ ((b.y + 1) * 19349663) ^ (b.level * 83492791)) | 0;
-      if (b.type !== "road") {
-        sig = (sig * 31 + b.type.charCodeAt(0) + (b.rotation ?? 0) * 17 + (b.fields?.length ?? 0) * 13) | 0;
+      if (b.type === "road") {
+        roadCount++;
+        continue;
       }
+      sig = (sig * 31 + b.type.charCodeAt(0) + (b.rotation ?? 0) * 17 + (b.fields?.length ?? 0) * 13) | 0;
     }
-    const sigStr = String(sig);
+    const sigStr = `${sig}:${roadCount}`;
     if (sigStr === this.signature) return;
     this.signature = sigStr;
     this.syncFarmFields(state);
+    this.syncRoadInstances(state);
 
-    const alive = new Set(state.buildings.map((b) => b.id));
+    const alive = new Set(
+      state.buildings.filter((b) => b.type !== "road").map((b) => b.id),
+    );
     for (const [id, mesh] of this.buildingMeshes) {
       if (!alive.has(id)) {
         this.buildingsGroup.remove(mesh);
@@ -969,6 +991,7 @@ export class VillageScene {
     }
 
     for (const b of state.buildings) {
+      if (b.type === "road") continue;
       let mesh = this.buildingMeshes.get(b.id);
       if (!mesh) {
         mesh = this.spawnBuilding(b);
@@ -994,6 +1017,73 @@ export class VillageScene {
             : 0
           : buildingYaw(b.rotation ?? 0);
     }
+  }
+
+  /** One InstancedMesh for all dirt roads — same look, far fewer draw calls. */
+  private syncRoadInstances(state: GameState): void {
+    const roads = state.buildings.filter((b) => b.type === "road");
+    let roadSig = roads.length * 2654435761;
+    for (const r of roads) {
+      roadSig = (roadSig ^ ((r.x + 1) * 73856093) ^ ((r.y + 1) * 19349663)) | 0;
+    }
+    const sig = String(roadSig);
+    if (sig === this.roadInstanceSig) return;
+    this.roadInstanceSig = sig;
+
+    if (this.roadDirtMesh) {
+      this.buildingsGroup.remove(this.roadDirtMesh);
+      this.roadDirtMesh.geometry.dispose();
+      (this.roadDirtMesh.material as THREE.Material).dispose();
+      this.roadDirtMesh = null;
+    }
+    if (this.roadStripeMesh) {
+      this.buildingsGroup.remove(this.roadStripeMesh);
+      this.roadStripeMesh.geometry.dispose();
+      (this.roadStripeMesh.material as THREE.Material).dispose();
+      this.roadStripeMesh = null;
+    }
+    // Drop any leftover per-tile road groups from older sessions
+    for (const [id, mesh] of [...this.buildingMeshes]) {
+      if (mesh.userData.buildingType === "road") {
+        this.buildingsGroup.remove(mesh);
+        this.disposeObject(mesh);
+        this.buildingMeshes.delete(id);
+      }
+    }
+
+    if (!roads.length) return;
+
+    const dirtGeo = new THREE.PlaneGeometry(1.85, 1.85);
+    const stripeGeo = new THREE.PlaneGeometry(1.6, 0.2);
+    const dirtMat = new THREE.MeshBasicMaterial({ color: "#c4a882" });
+    const stripeMat = new THREE.MeshBasicMaterial({ color: "#b09068" });
+    const dirt = new THREE.InstancedMesh(dirtGeo, dirtMat, roads.length);
+    const stripe = new THREE.InstancedMesh(stripeGeo, stripeMat, roads.length);
+    dirt.frustumCulled = true;
+    stripe.frustumCulled = true;
+    dirt.castShadow = false;
+    stripe.castShadow = false;
+
+    const d = this.roadDummy;
+    for (let i = 0; i < roads.length; i++) {
+      const r = roads[i];
+      const x = r.x * TILE + TILE / 2;
+      const z = r.y * TILE + TILE / 2;
+      d.position.set(x, 0.05, z);
+      d.rotation.set(-Math.PI / 2, 0, 0);
+      d.scale.set(1, 1, 1);
+      d.updateMatrix();
+      dirt.setMatrixAt(i, d.matrix);
+      d.position.set(x, 0.06, z);
+      d.updateMatrix();
+      stripe.setMatrixAt(i, d.matrix);
+    }
+    dirt.instanceMatrix.needsUpdate = true;
+    stripe.instanceMatrix.needsUpdate = true;
+    this.roadDirtMesh = dirt;
+    this.roadStripeMesh = stripe;
+    this.buildingsGroup.add(dirt);
+    this.buildingsGroup.add(stripe);
   }
 
   private buildingMeshKey(b: Building): string {
@@ -1179,6 +1269,19 @@ export class VillageScene {
     this.syncVillagers(state);
     this.syncBattle(state);
     this.animateDecor(dt);
+
+    // Refresh shadows only when the camera moves or on a slow pulse (shadows are expensive)
+    this.shadowAcc += dt;
+    const camMoved =
+      Math.abs(this.target.x - this.lastShadowCamX) > 2.5 ||
+      Math.abs(this.target.z - this.lastShadowCamZ) > 2.5;
+    if (camMoved || this.shadowAcc > 0.35 || Number.isNaN(this.lastShadowCamX)) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.lastShadowCamX = this.target.x;
+      this.lastShadowCamZ = this.target.z;
+      this.shadowAcc = 0;
+    }
+
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
   }

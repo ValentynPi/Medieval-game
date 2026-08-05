@@ -253,39 +253,7 @@ function drawUnit(ctx: CanvasRenderingContext2D, u: BattleUnit): void {
 
 export function drawWorld(ctx: CanvasRenderingContext2D, state: GameState): void {
   ctx.clearRect(0, 0, W, H);
-  const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, "#2a3d55");
-  sky.addColorStop(0.45, "#3d5a3c");
-  sky.addColorStop(1, "#4a6b3a");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H);
-
-  const layout = getWorldLayout();
-  const mapScaleX = W / (GRID_W * TILE);
-  const mapScaleY = H / (GRID_H * TILE);
-  const step = 4;
-  for (let gy = 0; gy < GRID_H; gy += step) {
-    for (let gx = 0; gx < GRID_W; gx += step) {
-      const b = layout.biomes[gy][gx];
-      const px = gx * TILE * mapScaleX;
-      const py = gy * TILE * mapScaleY;
-      const tw = TILE * step * mapScaleX;
-      const th = TILE * step * mapScaleY;
-      if (b === "water" || b === "water_shore") {
-        ctx.fillStyle = b === "water" ? "rgba(50,110,170,0.55)" : "rgba(70,130,150,0.35)";
-        ctx.fillRect(px, py, tw, th);
-      } else if (b === "mountain") {
-        ctx.fillStyle = "rgba(90,95,100,0.55)";
-        ctx.fillRect(px, py, tw, th);
-      } else if (b === "rocky") {
-        ctx.fillStyle = "rgba(100,110,90,0.3)";
-        ctx.fillRect(px, py, tw, th);
-      } else if (b === "forest" || b === "deep_forest") {
-        ctx.fillStyle = b === "deep_forest" ? "rgba(30,60,35,0.45)" : "rgba(45,80,50,0.3)";
-        ctx.fillRect(px, py, tw, th);
-      }
-    }
-  }
+  ctx.drawImage(ensureWorldBiomeLayer(), 0, 0);
 
   ctx.strokeStyle = "rgba(120,90,50,0.4)";
   ctx.lineWidth = 5;
@@ -356,6 +324,52 @@ export function drawWorld(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.fillStyle = "#f5e6c8";
   ctx.font = "600 15px Cinzel, serif";
   ctx.fillText("Marches map — blue cities trade · camps for war · rivers & mountains shown", 16, 24);
+}
+
+let worldBiomeLayer: HTMLCanvasElement | null = null;
+
+/** Paint rivers/forests/mountains once — the layout never changes at runtime. */
+function ensureWorldBiomeLayer(): HTMLCanvasElement {
+  if (worldBiomeLayer) return worldBiomeLayer;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d")!;
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#2a3d55");
+  sky.addColorStop(0.45, "#3d5a3c");
+  sky.addColorStop(1, "#4a6b3a");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  const layout = getWorldLayout();
+  const mapScaleX = W / (GRID_W * TILE);
+  const mapScaleY = H / (GRID_H * TILE);
+  const step = 4;
+  for (let gy = 0; gy < GRID_H; gy += step) {
+    for (let gx = 0; gx < GRID_W; gx += step) {
+      const b = layout.biomes[gy][gx];
+      const px = gx * TILE * mapScaleX;
+      const py = gy * TILE * mapScaleY;
+      const tw = TILE * step * mapScaleX;
+      const th = TILE * step * mapScaleY;
+      if (b === "water" || b === "water_shore") {
+        ctx.fillStyle = b === "water" ? "rgba(50,110,170,0.55)" : "rgba(70,130,150,0.35)";
+        ctx.fillRect(px, py, tw, th);
+      } else if (b === "mountain") {
+        ctx.fillStyle = "rgba(90,95,100,0.55)";
+        ctx.fillRect(px, py, tw, th);
+      } else if (b === "rocky") {
+        ctx.fillStyle = "rgba(100,110,90,0.3)";
+        ctx.fillRect(px, py, tw, th);
+      } else if (b === "forest" || b === "deep_forest") {
+        ctx.fillStyle = b === "deep_forest" ? "rgba(30,60,35,0.45)" : "rgba(45,80,50,0.3)";
+        ctx.fillRect(px, py, tw, th);
+      }
+    }
+  }
+  worldBiomeLayer = c;
+  return c;
 }
 
 function roundRect(

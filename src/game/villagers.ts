@@ -1,7 +1,7 @@
 import { GRID_H, GRID_W, HIRE_BUILDER_COST, canAfford, pay } from "./config";
 import { findPath, isDrowningCell, isFootWalkable, nearestWalkable } from "./pathfind";
 import { keepLevel, uid } from "./state";
-import { cellBiome, forestCellKey, hasStandingTimber } from "./worldGen";
+import { cellBiomeState, forestCellKey, hasStandingTimber } from "./worldGen";
 import type {
   ConstructionSite,
   GameState,
@@ -219,7 +219,7 @@ function scoreSite(
   fromY: number,
 ): number {
   if (!isFootWalkable(state, gx, gy)) return -1;
-  const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
+  const biome = cellBiomeState(state, gx, gy);
   const b = state.buildings.find((x) => x.x === gx && x.y === gy);
   let ok = false;
   if (job === "woodcutter") {
@@ -378,7 +378,7 @@ export function setVillagerWorkplace(
     return false;
   }
   if (v.job === "idle") {
-    const biome = cellBiome(gx, gy, state.buildings, state.clearedForest);
+    const biome = cellBiomeState(state, gx, gy);
     const b = state.buildings.find((x) => x.x === gx && x.y === gy);
     if (b?.type === "farm" || state.buildings.some((f) => f.fields?.some((c) => c.x === gx && c.y === gy))) {
       v.job = "farmer";
@@ -533,7 +533,7 @@ function deliverWork(state: GameState, v: Villager): void {
     const atLumber = state.buildings.some(
       (b) => b.type === "lumber" && b.x === v.workGx && b.y === v.workGy,
     );
-    const biome = cellBiome(v.workGx, v.workGy, state.buildings, state.clearedForest);
+    const biome = cellBiomeState(state, v.workGx, v.workGy);
     const inWoods =
       biome === "forest" ||
       biome === "deep_forest" ||

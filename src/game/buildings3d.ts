@@ -492,17 +492,17 @@ export function createBuildingMesh(
       break;
     }
     case "road": {
+      // Flat dirt — unlit so hundreds of road tiles stay cheap (same colors as before)
       const dirt = new THREE.Mesh(
         new THREE.PlaneGeometry(1.85, 1.85),
-        mat("#c4a882", { rough: 1 }),
+        new THREE.MeshBasicMaterial({ color: "#c4a882" }),
       );
       dirt.rotation.x = -Math.PI / 2;
       dirt.position.y = 0.05;
-      dirt.receiveShadow = true;
       g.add(dirt);
       const stripe = new THREE.Mesh(
         new THREE.PlaneGeometry(1.6, 0.2),
-        mat("#b09068", { rough: 1 }),
+        new THREE.MeshBasicMaterial({ color: "#b09068" }),
       );
       stripe.rotation.x = -Math.PI / 2;
       stripe.position.y = 0.06;
