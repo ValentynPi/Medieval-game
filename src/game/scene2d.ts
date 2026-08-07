@@ -13,6 +13,8 @@ import {
   unitSprite,
   villagerSprite,
   warmSpriteAtlas,
+  invalidateSpriteCache,
+  preloadArtAssets,
 } from "./sprites";
 import type { BuildingType, GameState } from "./types";
 
@@ -35,7 +37,7 @@ export class VillageScene {
   /** Camera focus in isometric world space */
   private camX = 0;
   private camY = 0;
-  private zoom = 1;
+  private zoom = 1.15;
 
   private dragging = false;
   private lastX = 0;
@@ -69,6 +71,11 @@ export class VillageScene {
     this.centerOnKeep();
     this.bindInput();
     this.resize();
+    void preloadArtAssets().then(() => {
+      invalidateSpriteCache();
+      this.terrainChunks.clear();
+      warmSpriteAtlas();
+    });
   }
 
   private getTerrainChunk(cx: number, cy: number): HTMLCanvasElement | null {
@@ -369,7 +376,12 @@ export class VillageScene {
     this.tickCamera(dt, state.mode === "village" || state.mode === "battle");
 
     const ctx = this.ctx;
-    ctx.fillStyle = "#3d5c48";
+    // FoE-like sky wash behind the map
+    const sky = ctx.createLinearGradient(0, 0, 0, this.h);
+    sky.addColorStop(0, "#7eb6e0");
+    sky.addColorStop(0.45, "#9bc4a0");
+    sky.addColorStop(1, "#5a8a58");
+    ctx.fillStyle = sky;
     ctx.fillRect(0, 0, this.w, this.h);
 
     this.drawTerrain();
@@ -464,9 +476,9 @@ export class VillageScene {
       if (!this.onScreen(s.x, s.y, 100)) continue;
 
       const spr = buildingSprite(b.type, b.level);
-      const dw = spr.width * this.zoom;
-      const dh = spr.height * this.zoom;
-      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.35 * this.zoom, dw, dh);
+      const dw = spr.width * this.zoom * 1.05;
+      const dh = spr.height * this.zoom * 1.05;
+      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.28 * this.zoom, dw, dh);
 
       if (b.type !== "road") {
         this.lastBuildingHits.push({ id: b.id, x: s.x, y: s.y - dh * 0.4 });
