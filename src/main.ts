@@ -2,6 +2,7 @@ import "./style.css";
 import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, barracksTroopCap, maxFarmFields, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
 import { VillageScene } from "./game/scene2d";
+import { preloadArtAssets } from "./game/sprites";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
 import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedBuildersHall, selectedCity, selectedSite, selectedTrainingGround, totalTroops, troopCapacity } from "./game/state";
 import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/save";
@@ -1450,5 +1451,18 @@ if (lastSavedLabel()) {
   const pill = document.querySelector("#save-pill");
   if (pill) pill.textContent = `Last: ${lastSavedLabel()}`;
 }
-renderHud();
-requestAnimationFrame(frame);
+
+const bootMsg = document.querySelector("#message")!;
+bootMsg.textContent = "Loading painted realm art…";
+bootMsg.classList.remove("hidden");
+
+preloadArtAssets().then(() => {
+  village.refreshArt();
+  bootMsg.textContent = "";
+  bootMsg.classList.add("hidden");
+  renderHud();
+  requestAnimationFrame(frame);
+}).catch(() => {
+  renderHud();
+  requestAnimationFrame(frame);
+});

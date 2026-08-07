@@ -14,7 +14,6 @@ import {
   villagerSprite,
   warmSpriteAtlas,
   invalidateSpriteCache,
-  preloadArtAssets,
 } from "./sprites";
 import type { BuildingType, GameState } from "./types";
 
@@ -71,11 +70,13 @@ export class VillageScene {
     this.centerOnKeep();
     this.bindInput();
     this.resize();
-    void preloadArtAssets().then(() => {
-      invalidateSpriteCache();
-      this.terrainChunks.clear();
-      warmSpriteAtlas();
-    });
+  }
+
+  /** Call after painted PNGs finish loading so chunks/sprites swap in. */
+  refreshArt(): void {
+    invalidateSpriteCache();
+    this.terrainChunks.clear();
+    warmSpriteAtlas();
   }
 
   private getTerrainChunk(cx: number, cy: number): HTMLCanvasElement | null {
@@ -125,9 +126,12 @@ export class VillageScene {
         const spr = terrainSprite(biome);
         ctx.drawImage(spr, iso.x - minX - spr.width / 2, iso.y - minY - spr.height / 2);
         if (biome === "forest" || biome === "deep_forest") {
-          if ((gx + gy * 3) % 2 === 0) {
+          // Painted tree clusters on wooded tiles
+          if ((gx * 5 + gy * 3) % 3 === 0) {
             const tree = treeSprite(biome === "deep_forest");
-            ctx.drawImage(tree, iso.x - minX - tree.width / 2, iso.y - minY - tree.height + 8);
+            const tw = tree.width * 0.85;
+            const th = tree.height * 0.85;
+            ctx.drawImage(tree, iso.x - minX - tw / 2, iso.y - minY - th + 10, tw, th);
           }
         }
       }
@@ -476,9 +480,10 @@ export class VillageScene {
       if (!this.onScreen(s.x, s.y, 100)) continue;
 
       const spr = buildingSprite(b.type, b.level);
-      const dw = spr.width * this.zoom * 1.05;
-      const dh = spr.height * this.zoom * 1.05;
-      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.28 * this.zoom, dw, dh);
+      const scale = (b.type === "road" ? 1 : 1.65) * this.zoom;
+      const dw = spr.width * scale;
+      const dh = spr.height * scale;
+      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.2 * this.zoom, dw, dh);
 
       if (b.type !== "road") {
         this.lastBuildingHits.push({ id: b.id, x: s.x, y: s.y - dh * 0.4 });
