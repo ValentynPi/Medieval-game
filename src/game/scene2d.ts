@@ -617,9 +617,10 @@ export class VillageScene {
       const iso = gridToIso(this.ghostCell.x, this.ghostCell.y);
       const s = this.toScreen(iso.x, iso.y);
       const spr = ghostSprite(this.ghostType);
-      const dw = spr.width * this.zoom;
-      const dh = spr.height * this.zoom;
-      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.35 * this.zoom, dw, dh);
+      const scale = 1.65 * this.zoom;
+      const dw = spr.width * scale;
+      const dh = spr.height * scale;
+      this.ctx.drawImage(spr, s.x - dw / 2, s.y - dh + ISO_H * 0.2 * this.zoom, dw, dh);
     }
   }
 
