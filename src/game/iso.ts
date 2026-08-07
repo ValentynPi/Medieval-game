@@ -1,6 +1,6 @@
 /** Isometric tile footprint (Forge of Empires–style diamond). */
-export const ISO_W = 64;
-export const ISO_H = 32;
+export const ISO_W = 80;
+export const ISO_H = 40;
 
 /** Grid cell → isometric world (before camera). */
 export function gridToIso(gx: number, gy: number): { x: number; y: number } {
