@@ -1,7 +1,7 @@
 import "./style.css";
 import { BUILDINGS, BUILD_MENU_SECTIONS, HIRE_BUILDER_COST, PLACEABLE, TROOP_STATS, barracksTroopCap, maxFarmFields, scaleCost } from "./game/config";
 import { drawWorld, worldCityFromPointer, worldSiteFromPointer } from "./game/render";
-import { VillageScene } from "./game/scene3d";
+import { VillageScene } from "./game/scene2d";
 import { nextVariantUnlock, troopVariantForLevel, variantLabel, variantModifiers } from "./game/combat";
 import { createInitialState, barracksLevel, fieldArmy, keepLevel, resetIdCounter, selectedBarracks, selectedBuildersHall, selectedCity, selectedSite, selectedTrainingGround, totalTroops, troopCapacity } from "./game/state";
 import { clearSave, hasSave, lastSavedLabel, loadGame, saveGame } from "./game/save";
@@ -103,7 +103,7 @@ app.innerHTML = `
       </div>
       <div class="toolbar" id="toolbar"></div>
       <div class="legend">
-        <span>Click townsfolk to assign work · Camera: WASD / arrows · right-drag · scroll zoom</span>
+        <span>Click townsfolk to assign work · Camera: WASD / arrows · right-drag pan · scroll zoom</span>
         <span>Infantry &gt; Cavalry &gt; Archers &gt; Infantry</span>
         <span>Raids: drag-select · L/V/B/C formations · Q Ironwall · Shift+1/2/3 speed · Space pause</span>
       </div>
@@ -118,7 +118,7 @@ app.innerHTML = `
   <div class="intro-overlay" id="intro">
     <div class="intro-card">
       <h1>The crown is yours</h1>
-      <p>Raise a stylized March village in 3D — thatched halls, torchlight, and raids at the gate.</p>
+      <p>Raise a stylized March village — painted halls, tiled fields, and raids at the gate.</p>
       <ul>
         <li>Click the Builders Hall to choose what to raise, then click the map</li>
         <li>Hire builders at the Hall — they walk out and finish most buildings</li>

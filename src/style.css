@@ -228,7 +228,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  background: #1a2740;
+  background: #3d5c48;
 }
 
 .stage canvas#game,
@@ -236,7 +236,12 @@ body {
   width: 100%;
   height: 100%;
   display: block;
-  cursor: crosshair;
+  cursor: grab;
+  image-rendering: auto;
+}
+
+.stage canvas#game:active {
+  cursor: grabbing;
 }
 
 .toolbar {
